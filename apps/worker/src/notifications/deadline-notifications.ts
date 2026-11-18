@@ -1,20 +1,29 @@
 import { Temporal } from "@js-temporal/polyfill";
 import { db } from "@examconnect/database";
 
-const REMINDER_DAYS = 3;
+const REMINDER_WINDOWS = [
+  { days: 1, type: "DEADLINE_1D", label: "closes within 24 hours" },
+  { days: 3, type: "DEADLINE_3D", label: "closes within 3 days" },
+  { days: 7, type: "DEADLINE_7D", label: "closes within 7 days" },
+] as const;
 
 export async function generateDeadlineNotifications() {
   const now = Temporal.Now.instant();
 
-  const reminderDate = now.add({
-    hours: REMINDER_DAYS * 24,
-  });
+  const [deadlines, exams, profiles, existingNotifications] = await Promise.all([
+    db.orm.public.ApplicationDeadline.all(),
+    db.orm.public.Exam.all(),
+    db.orm.public.StudentProfile.all(),
+    db.orm.public.StudentNotification.all(),
+  ]);
 
-  const deadlines =
-    await db.orm.public.ApplicationDeadline.all();
+  const examById = new Map(exams.map((exam) => [exam.id, exam]));
 
-  const profiles =
-    await db.orm.public.StudentProfile.all();
+  const existingKeys = new Set(
+    existingNotifications
+      .filter((n) => n.deadlineId !== null)
+      .map((n) => `${n.userId}:${n.deadlineId}:${n.type}`),
+  );
 
   let createdCount = 0;
 
@@ -23,45 +32,71 @@ export async function generateDeadlineNotifications() {
       continue;
     }
 
+    const exam = examById.get(deadline.examId);
+    if (!exam || exam.isArchived) {
+      continue;
+    }
+
+    if (deadline.status.trim().toUpperCase() === "CLOSED") {
+      continue;
+    }
+
     const applicationEnd = Temporal.Instant.from(
       deadline.applicationEnd.toString(),
     );
 
-    const isExpired =
-      Temporal.Instant.compare(applicationEnd, now) <= 0;
-
-    const isTooFarAway =
-      Temporal.Instant.compare(applicationEnd, reminderDate) > 0;
-
-    if (isExpired || isTooFarAway) {
+    if (Temporal.Instant.compare(applicationEnd, now) <= 0) {
       continue;
     }
 
-    for (const profile of profiles) {
-      const existingNotifications =
-        await db.orm.public.StudentNotification.where({
-          userId: profile.userId,
-          deadlineId: deadline.id,
-          type: "DEADLINE",
-        }).all();
+    if (deadline.applicationStart) {
+      const applicationStart = Temporal.Instant.from(
+        deadline.applicationStart.toString(),
+      );
+      if (Temporal.Instant.compare(now, applicationStart) < 0) {
+        continue;
+      }
+    }
 
-      if (existingNotifications.length > 0) {
+    const msRemaining =
+      applicationEnd.epochMilliseconds - now.epochMilliseconds;
+    const daysRemaining = msRemaining / (1000 * 60 * 60 * 24);
+
+    const matchedWindow = REMINDER_WINDOWS.find(
+      (window) => daysRemaining <= window.days,
+    );
+
+    if (!matchedWindow) {
+      continue;
+    }
+
+    const formattedEndDate = new Date(
+      applicationEnd.epochMilliseconds,
+    ).toLocaleDateString("en-IN", {
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+    });
+
+    for (const profile of profiles) {
+      const dedupeKey = `${profile.userId}:${deadline.id}:${matchedWindow.type}`;
+      if (existingKeys.has(dedupeKey)) {
         continue;
       }
 
       await db.orm.public.StudentNotification.create({
         userId: profile.userId,
-        type: "DEADLINE",
-        title: "Application deadline approaching",
-        message:
-          "An application deadline is approaching. Please check the exam details and apply before the deadline.",
+        type: matchedWindow.type,
+        title: `Application deadline reminder: ${exam.name}`,
+        message: `Applications for ${exam.name} (${exam.conductingBody}) ${matchedWindow.label} on ${formattedEndDate}. Check your eligibility and submit before closing.`,
         deadlineId: deadline.id,
         examId: deadline.examId,
         postId: deadline.postId,
         isRead: false,
       });
 
-      createdCount++;
+      existingKeys.add(dedupeKey);
+      createdCount += 1;
     }
   }
 

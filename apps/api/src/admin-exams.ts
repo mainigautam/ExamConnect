@@ -32,6 +32,7 @@ const createPostSchema = z.object({
 
 const createEligibilityRuleSchema = z.object({
   postId: z.number().int().positive().optional(),
+  notificationSourceId: z.number().int().positive().optional(),
   ruleType: z.string().trim().min(1).max(100),
   name: z.string().trim().min(1).max(200),
   description: z.string().trim().max(5000).optional(),
@@ -40,6 +41,8 @@ const createEligibilityRuleSchema = z.object({
   conditionField: z.string().trim().min(1).max(100),
   operator: z.string().trim().min(1).max(50),
   expectedValue: z.string().trim().min(1).max(500),
+  logicGroup: z.string().trim().max(100).optional().nullable(),
+  logicOperator: z.enum(["AND", "OR"]).default("AND"),
   effectiveFrom: z.string().datetime().optional(),
   effectiveTo: z.string().datetime().optional(),
 });
@@ -242,11 +245,14 @@ export async function adminExamRoute(app: FastifyInstance) {
       const version =
         await db.orm.public.EligibilityRuleVersion.create({
           eligibilityRuleId: rule.id,
+          notificationSourceId: parsed.data.notificationSourceId,
           versionNumber: parsed.data.versionNumber,
           status: parsed.data.versionStatus,
           conditionField: parsed.data.conditionField,
           operator: parsed.data.operator,
           expectedValue: parsed.data.expectedValue,
+          logicGroup: parsed.data.logicGroup ?? undefined,
+          logicOperator: parsed.data.logicOperator,
           effectiveFrom: parsed.data.effectiveFrom
             ? Temporal.Instant.from(parsed.data.effectiveFrom)
             : undefined,

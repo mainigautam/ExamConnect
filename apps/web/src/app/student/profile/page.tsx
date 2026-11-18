@@ -1,34 +1,31 @@
 "use client";
 
+import { FormEvent, useEffect, useState } from "react";
+import styles from "../../../components/ui.module.css";
+import { AppShell } from "../../../components/AppShell";
+import { ConfirmDialog } from "../../../components/ConfirmDialog";
 import {
-  FormEvent,
-  useEffect,
-  useState,
-} from "react";
-import { useRouter } from "next/navigation";
-import styles from "./profile.module.css";
+  AlertBanner,
+  EmptyState,
+  LoadingSkeleton,
+} from "../../../components/FeedbackStates";
+import { IconEdit, IconPlus, IconTrash } from "../../../components/Icons";
+import { GenericBadge } from "../../../components/StatusBadge";
+import { apiFetch } from "../../../lib/api";
+import { useAuthGuard } from "../../../lib/useAuthGuard";
+import type {
+  EducationRecord,
+  ProfileCompletion,
+  StudentProfile,
+} from "../../../lib/types";
 
-type StudentProfile = {
-  id: number;
-  userId: number;
+type ProfileForm = {
   firstName: string;
-  lastName: string | null;
-  dateOfBirth: string | null;
-  gender: string | null;
-  state: string | null;
-  category: string | null;
-};
-
-type EducationRecord = {
-  id: number;
-  studentProfileId: number;
-  qualification: string;
-  courseName: string | null;
-  institutionName: string | null;
-  boardOrUniversity: string | null;
-  passingYear: number | null;
-  percentage: number | null;
-  stream: string | null;
+  lastName: string;
+  dateOfBirth: string;
+  gender: string;
+  state: string;
+  category: string;
 };
 
 type EducationForm = {
@@ -41,19 +38,6 @@ type EducationForm = {
   stream: string;
 };
 
-type ProfileForm = {
-  firstName: string;
-  lastName: string;
-  dateOfBirth: string;
-  gender: string;
-  state: string;
-  category: string;
-};
-
-const API_URL =
-  process.env.NEXT_PUBLIC_API_URL ??
-  "http://localhost:4000";
-
 const emptyEducation: EducationForm = {
   qualification: "",
   courseName: "",
@@ -64,1135 +48,800 @@ const emptyEducation: EducationForm = {
   stream: "",
 };
 
+const INDIAN_STATES = [
+  "Andhra Pradesh",
+  "Arunachal Pradesh",
+  "Assam",
+  "Bihar",
+  "Chhattisgarh",
+  "Delhi",
+  "Goa",
+  "Gujarat",
+  "Haryana",
+  "Himachal Pradesh",
+  "Jammu and Kashmir",
+  "Jharkhand",
+  "Karnataka",
+  "Kerala",
+  "Madhya Pradesh",
+  "Maharashtra",
+  "Manipur",
+  "Meghalaya",
+  "Mizoram",
+  "Nagaland",
+  "Odisha",
+  "Punjab",
+  "Rajasthan",
+  "Sikkim",
+  "Tamil Nadu",
+  "Telangana",
+  "Tripura",
+  "Uttar Pradesh",
+  "Uttarakhand",
+  "West Bengal",
+  "Chandigarh",
+  "Puducherry",
+];
+
+function toDateInputValue(iso: string | null | undefined): string {
+  if (!iso) return "";
+  const match = iso.match(/^(\d{4}-\d{2}-\d{2})/);
+  if (match) return match[1];
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toISOString().slice(0, 10);
+}
+
 export default function StudentProfilePage() {
-  const router = useRouter();
+  const { user, checking } = useAuthGuard();
 
-  const [profile, setProfile] =
-    useState<ProfileForm>({
-      firstName: "",
-      lastName: "",
-      dateOfBirth: "",
-      gender: "",
-      state: "",
-      category: "",
-    });
+  const [profileForm, setProfileForm] = useState<ProfileForm>({
+    firstName: "",
+    lastName: "",
+    dateOfBirth: "",
+    gender: "",
+    state: "",
+    category: "",
+  });
+  const [completion, setCompletion] = useState<ProfileCompletion | null>(null);
+  const [educationList, setEducationList] = useState<EducationRecord[]>([]);
+  const [eduForm, setEduForm] = useState<EducationForm>(emptyEducation);
+  const [editingEduId, setEditingEduId] = useState<number | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<EducationRecord | null>(null);
 
-  const [education, setEducation] =
-    useState<EducationRecord[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [savingProfile, setSavingProfile] = useState(false);
+  const [savingEdu, setSavingEdu] = useState(false);
+  const [deletingEdu, setDeletingEdu] = useState(false);
+  const [feedback, setFeedback] = useState<{
+    tone: "success" | "error";
+    text: string;
+  } | null>(null);
 
-  const [educationForm, setEducationForm] =
-    useState<EducationForm>(
-      emptyEducation,
-    );
+  async function loadAll() {
+    try {
+      setLoading(true);
+      const [profileRes, eduRes] = await Promise.allSettled([
+        apiFetch<{
+          profile: StudentProfile;
+          profileCompletion?: ProfileCompletion;
+        }>("/student/profile"),
+        apiFetch<{ education: EducationRecord[] }>("/student/education"),
+      ]);
 
-  const [editingEducationId, setEditingEducationId] =
-    useState<number | null>(null);
+      if (profileRes.status === "fulfilled") {
+        const p = profileRes.value.profile;
+        setProfileForm({
+          firstName: p.firstName ?? "",
+          lastName: p.lastName ?? "",
+          dateOfBirth: toDateInputValue(p.dateOfBirth),
+          gender: p.gender ?? "",
+          state: p.state ?? "",
+          category: p.category ?? "",
+        });
+        setCompletion(profileRes.value.profileCompletion ?? null);
+      }
 
-  const [loading, setLoading] =
-    useState(true);
-
-  const [savingProfile, setSavingProfile] =
-    useState(false);
-
-  const [savingEducation, setSavingEducation] =
-    useState(false);
-
-  const [deletingEducationId, setDeletingEducationId] =
-    useState<number | null>(null);
-
-  const [message, setMessage] =
-    useState<string | null>(null);
-
-  const [error, setError] =
-    useState<string | null>(null);
+      if (eduRes.status === "fulfilled") {
+        setEducationList(eduRes.value.education ?? []);
+      }
+    } finally {
+      setLoading(false);
+    }
+  }
 
   useEffect(() => {
-    async function loadProfile() {
-      try {
-        setLoading(true);
-        setError(null);
-
-        const [
-          profileResponse,
-          educationResponse,
-        ] = await Promise.all([
-          fetch(
-            `${API_URL}/student/profile`,
-            {
-              credentials: "include",
-              cache: "no-store",
-            },
-          ),
-          fetch(
-            `${API_URL}/student/education`,
-            {
-              credentials: "include",
-              cache: "no-store",
-            },
-          ),
-        ]);
-
-        if (
-          profileResponse.status === 401 ||
-          educationResponse.status === 401
-        ) {
-          router.push("/");
-          return;
-        }
-
-        if (profileResponse.ok) {
-          const data =
-            (await profileResponse.json()) as {
-              profile: StudentProfile;
-            };
-
-          setProfile({
-            firstName:
-              data.profile.firstName ?? "",
-            lastName:
-              data.profile.lastName ?? "",
-            dateOfBirth:
-              data.profile.dateOfBirth
-                ? data.profile.dateOfBirth.slice(
-                    0,
-                    10,
-                  )
-                : "",
-            gender:
-              data.profile.gender ?? "",
-            state:
-              data.profile.state ?? "",
-            category:
-              data.profile.category ?? "",
-          });
-        }
-
-        if (educationResponse.ok) {
-          const data =
-            (await educationResponse.json()) as {
-              education: EducationRecord[];
-            };
-
-          setEducation(
-            data.education ?? [],
-          );
-        }
-      } catch {
-        setError(
-          "Unable to load your profile.",
-        );
-      } finally {
-        setLoading(false);
-      }
+    if (user) {
+      void loadAll();
     }
+  }, [user]);
 
-    void loadProfile();
-  }, [router]);
-
-  function updateProfile(
-    field: keyof ProfileForm,
-    value: string,
-  ) {
-    setProfile((current) => ({
-      ...current,
-      [field]: value,
-    }));
-  }
-
-  function updateEducation(
-    field: keyof EducationForm,
-    value: string,
-  ) {
-    setEducationForm(
-      (current) => ({
-        ...current,
-        [field]: value,
-      }),
-    );
-  }
-
-  function startEditingEducation(
-    record: EducationRecord,
-  ) {
-    setEditingEducationId(record.id);
-
-    setEducationForm({
-      qualification:
-        record.qualification ?? "",
-      courseName:
-        record.courseName ?? "",
-      institutionName:
-        record.institutionName ?? "",
-      boardOrUniversity:
-        record.boardOrUniversity ?? "",
-      passingYear:
-        record.passingYear !== null
-          ? String(record.passingYear)
-          : "",
-      percentage:
-        record.percentage !== null
-          ? String(record.percentage)
-          : "",
-      stream:
-        record.stream ?? "",
-    });
-
-    setError(null);
-    setMessage(null);
-
-    window.scrollTo({
-      top: document.body.scrollHeight,
-      behavior: "smooth",
-    });
-  }
-
-  function cancelEditingEducation() {
-    setEditingEducationId(null);
-    setEducationForm(
-      emptyEducation,
-    );
-    setError(null);
-    setMessage(null);
-  }
-
-  async function saveProfile(
-    event: FormEvent<HTMLFormElement>,
-  ) {
+  async function handleSaveProfile(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    setFeedback(null);
+
+    if (!profileForm.firstName.trim()) {
+      setFeedback({ tone: "error", text: "First name is required." });
+      return;
+    }
 
     try {
       setSavingProfile(true);
-      setError(null);
-      setMessage(null);
+      const payload = {
+        firstName: profileForm.firstName.trim(),
+        lastName: profileForm.lastName.trim() || undefined,
+        dateOfBirth: profileForm.dateOfBirth
+          ? `${profileForm.dateOfBirth}T00:00:00.000Z`
+          : undefined,
+        gender: profileForm.gender || undefined,
+        state: profileForm.state || undefined,
+        category: profileForm.category || undefined,
+      };
 
-      const response = await fetch(
-        `${API_URL}/student/profile`,
-        {
-          method: "PUT",
-          credentials: "include",
-          headers: {
-            "Content-Type":
-              "application/json",
-          },
-          body: JSON.stringify({
-            firstName:
-              profile.firstName,
-            lastName:
-              profile.lastName ||
-              undefined,
-            dateOfBirth:
-              profile.dateOfBirth
-                ? `${profile.dateOfBirth}T00:00:00.000Z`
-                : undefined,
-            gender:
-              profile.gender ||
-              undefined,
-            state:
-              profile.state ||
-              undefined,
-            category:
-              profile.category ||
-              undefined,
-          }),
-        },
-      );
+      const data = await apiFetch<{
+        profile: StudentProfile;
+        profileCompletion?: ProfileCompletion;
+      }>("/student/profile", {
+        method: "PUT",
+        body: JSON.stringify(payload),
+      });
 
-      const data =
-        (await response.json()) as {
-          message?: string;
-        };
-
-      if (!response.ok) {
-        throw new Error(
-          data.message ??
-            "Unable to save profile.",
-        );
-      }
-
-      setMessage(
-        "Profile saved successfully. Your eligibility will be recalculated when you check your exams.",
-      );
-    } catch (
-      saveProfileError
-    ) {
-      setError(
-        saveProfileError instanceof Error
-          ? saveProfileError.message
-          : "Unable to save profile.",
-      );
+      setCompletion(data.profileCompletion ?? null);
+      setFeedback({
+        tone: "success",
+        text: "Personal profile saved successfully. Your exam eligibility has been updated.",
+      });
+    } catch (err) {
+      setFeedback({
+        tone: "error",
+        text: err instanceof Error ? err.message : "Unable to save profile.",
+      });
     } finally {
       setSavingProfile(false);
     }
   }
 
-  async function saveEducation(
-    event: FormEvent<HTMLFormElement>,
-  ) {
+  async function handleSaveEducation(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    setFeedback(null);
 
-    try {
-      setSavingEducation(true);
-      setError(null);
-      setMessage(null);
-
-      const payload = {
-        qualification:
-          educationForm.qualification,
-        courseName:
-          educationForm.courseName ||
-          undefined,
-        institutionName:
-          educationForm.institutionName ||
-          undefined,
-        boardOrUniversity:
-          educationForm.boardOrUniversity ||
-          undefined,
-        passingYear:
-          educationForm.passingYear
-            ? Number(
-                educationForm.passingYear,
-              )
-            : undefined,
-        percentage:
-          educationForm.percentage
-            ? Number(
-                educationForm.percentage,
-              )
-            : undefined,
-        stream:
-          educationForm.stream ||
-          undefined,
-      };
-
-      /*
-       * EDIT EXISTING EDUCATION
-       */
-      if (
-        editingEducationId !== null
-      ) {
-        const response = await fetch(
-          `${API_URL}/student/education/${editingEducationId}`,
-          {
-            method: "PUT",
-            credentials: "include",
-            headers: {
-              "Content-Type":
-                "application/json",
-            },
-            body: JSON.stringify(
-              payload,
-            ),
-          },
-        );
-
-        const data =
-          (await response.json()) as {
-            education?: EducationRecord;
-            message?: string;
-          };
-
-        if (
-          !response.ok ||
-          !data.education
-        ) {
-          throw new Error(
-            data.message ??
-              "Unable to update education.",
-          );
-        }
-
-        setEducation(
-          (current) =>
-            current.map(
-              (record) =>
-                record.id ===
-                editingEducationId
-                  ? data.education!
-                  : record,
-            ),
-        );
-
-        setEditingEducationId(
-          null,
-        );
-
-        setEducationForm(
-          emptyEducation,
-        );
-
-        setMessage(
-          "Education record updated successfully. Your eligibility will be recalculated when you check your exams.",
-        );
-
-        return;
-      }
-
-      /*
-       * ADD NEW EDUCATION
-       */
-      const response = await fetch(
-        `${API_URL}/student/education`,
-        {
-          method: "POST",
-          credentials: "include",
-          headers: {
-            "Content-Type":
-              "application/json",
-          },
-          body: JSON.stringify(
-            payload,
-          ),
-        },
-      );
-
-      const data =
-        (await response.json()) as {
-          education?: EducationRecord;
-          message?: string;
-        };
-
-      if (
-        !response.ok ||
-        !data.education
-      ) {
-        throw new Error(
-          data.message ??
-            "Unable to save education.",
-        );
-      }
-
-      setEducation(
-        (current) => [
-          ...current,
-          data.education!,
-        ],
-      );
-
-      setEducationForm(
-        emptyEducation,
-      );
-
-      setMessage(
-        "Education added successfully. Your eligibility will be recalculated when you check your exams.",
-      );
-    } catch (
-      saveEducationError
-    ) {
-      setError(
-        saveEducationError instanceof
-          Error
-          ? saveEducationError.message
-          : "Unable to save education.",
-      );
-    } finally {
-      setSavingEducation(false);
-    }
-  }
-
-  async function deleteEducation(
-    id: number,
-  ) {
-    const confirmed =
-      window.confirm(
-        "Delete this education record?",
-      );
-
-    if (!confirmed) {
+    if (!eduForm.qualification.trim()) {
+      setFeedback({ tone: "error", text: "Qualification is required." });
       return;
     }
 
-    try {
-      setDeletingEducationId(id);
-      setError(null);
-      setMessage(null);
+    const passingYearNum = eduForm.passingYear.trim()
+      ? Number(eduForm.passingYear)
+      : undefined;
+    const percentageNum = eduForm.percentage.trim()
+      ? Number(eduForm.percentage)
+      : undefined;
 
-      const response = await fetch(
-        `${API_URL}/student/education/${id}`,
-        {
-          method: "DELETE",
-          credentials: "include",
-        },
-      );
-
-      const data =
-        (await response.json()) as {
-          status?: string;
-          message?: string;
-          deletedId?: number;
-          error?: string;
-        };
-
-      if (!response.ok) {
-        throw new Error(
-          data.message ??
-            "Unable to delete education.",
-        );
-      }
-
-      if (
-        data.deletedId !== undefined &&
-        data.deletedId !== id
-      ) {
-        throw new Error(
-          "The server deleted a different education record.",
-        );
-      }
-
-      /*
-       * Reload the education list from
-       * the backend/database.
-       */
-      const educationResponse =
-        await fetch(
-          `${API_URL}/student/education`,
-          {
-            method: "GET",
-            credentials: "include",
-            cache: "no-store",
-          },
-        );
-
-      if (
-        educationResponse.status === 401
-      ) {
-        router.push("/");
-        return;
-      }
-
-      if (!educationResponse.ok) {
-        throw new Error(
-          "Education was deleted, but the updated education list could not be loaded.",
-        );
-      }
-
-      const educationData =
-        (await educationResponse.json()) as {
-          education: EducationRecord[];
-        };
-
-      setEducation(
-        educationData.education ?? [],
-      );
-
-      setMessage(
-        "Education record deleted successfully.",
-      );
-    } catch (
-      deleteEducationError
+    if (
+      passingYearNum !== undefined &&
+      (!Number.isInteger(passingYearNum) ||
+        passingYearNum < 1950 ||
+        passingYearNum > 2035)
     ) {
-      setError(
-        deleteEducationError instanceof
-          Error
-          ? deleteEducationError.message
-          : "Unable to delete education.",
-      );
+      setFeedback({
+        tone: "error",
+        text: "Passing year must be a valid four-digit year.",
+      });
+      return;
+    }
+
+    if (
+      percentageNum !== undefined &&
+      (Number.isNaN(percentageNum) || percentageNum < 0 || percentageNum > 100)
+    ) {
+      setFeedback({
+        tone: "error",
+        text: "Percentage must be between 0 and 100.",
+      });
+      return;
+    }
+
+    const payload = {
+      qualification: eduForm.qualification.trim(),
+      courseName: eduForm.courseName.trim() || undefined,
+      institutionName: eduForm.institutionName.trim() || undefined,
+      boardOrUniversity: eduForm.boardOrUniversity.trim() || undefined,
+      passingYear: passingYearNum,
+      percentage: percentageNum,
+      stream: eduForm.stream.trim() || undefined,
+    };
+
+    try {
+      setSavingEdu(true);
+
+      if (editingEduId !== null) {
+        await apiFetch(`/student/education/${editingEduId}`, {
+          method: "PUT",
+          body: JSON.stringify(payload),
+        });
+        setFeedback({
+          tone: "success",
+          text: "Education record updated successfully.",
+        });
+      } else {
+        await apiFetch("/student/education", {
+          method: "POST",
+          body: JSON.stringify(payload),
+        });
+        setFeedback({
+          tone: "success",
+          text: "New education record added without modifying your existing records.",
+        });
+      }
+
+      setEduForm(emptyEducation);
+      setEditingEduId(null);
+      await loadAll();
+    } catch (err) {
+      setFeedback({
+        tone: "error",
+        text:
+          err instanceof Error
+            ? err.message
+            : "Unable to save education record.",
+      });
     } finally {
-      setDeletingEducationId(null);
+      setSavingEdu(false);
     }
   }
 
-  function goToDashboard() {
-    router.push("/");
+  function startEditEducation(record: EducationRecord) {
+    setEditingEduId(record.id);
+    setEduForm({
+      qualification: record.qualification ?? "",
+      courseName: record.courseName ?? "",
+      institutionName: record.institutionName ?? "",
+      boardOrUniversity: record.boardOrUniversity ?? "",
+      passingYear:
+        record.passingYear !== null && record.passingYear !== undefined
+          ? String(record.passingYear)
+          : "",
+      percentage:
+        record.percentage !== null && record.percentage !== undefined
+          ? String(record.percentage)
+          : "",
+      stream: record.stream ?? "",
+    });
+    setFeedback(null);
   }
 
-  if (loading) {
+  async function confirmDeleteEducation() {
+    if (!deleteTarget) return;
+    try {
+      setDeletingEdu(true);
+      await apiFetch(`/student/education/${deleteTarget.id}`, {
+        method: "DELETE",
+      });
+      setDeleteTarget(null);
+      if (editingEduId === deleteTarget.id) {
+        setEditingEduId(null);
+        setEduForm(emptyEducation);
+      }
+      setFeedback({
+        tone: "success",
+        text: "Education record deleted successfully.",
+      });
+      await loadAll();
+    } catch (err) {
+      setFeedback({
+        tone: "error",
+        text:
+          err instanceof Error
+            ? err.message
+            : "Unable to delete education record.",
+      });
+    } finally {
+      setDeletingEdu(false);
+    }
+  }
+
+  if (checking || !user) {
     return (
-      <main
-        className={styles.page}
-      >
-        <section
-          className={styles.loadingCard}
-        >
-          Loading your profile...
+      <main className={styles.authCentered}>
+        <section className={styles.authCard}>
+          <LoadingSkeleton rows={2} />
         </section>
       </main>
     );
   }
 
-  const isEditing =
-    editingEducationId !== null;
-
   return (
-    <main className={styles.page}>
-      <header
-        className={styles.header}
-      >
+    <AppShell user={user} title="Profile & Education">
+      <div className={styles.pageHeader}>
         <div>
-          <button
-            type="button"
-            className={
-              styles.backButton
-            }
-            onClick={goToDashboard}
-          >
-            ← Dashboard
-          </button>
-
-          <p
-            className={
-              styles.eyebrow
-            }
-          >
-            EXAMCONNECT
-          </p>
-
-          <h1>
-            Student Profile
-          </h1>
-
-          <p
-            className={
-              styles.subtitle
-            }
-          >
-            Keep your personal and education
-            details updated. ExamConnect uses
-            them to determine which government
-            exams you qualify for.
+          <h1>Student Profile &amp; Education Records</h1>
+          <p className={styles.pageSubtitle}>
+            Keep your personal profile and all qualifications (Class 10, Class 12,
+            Diploma, Bachelor&apos;s, Master&apos;s) up to date for accurate eligibility checks.
           </p>
         </div>
-      </header>
+      </div>
 
-      {error && (
-        <div
-          className={
-            styles.errorMessage
-          }
-        >
-          {error}
+      {feedback && (
+        <div style={{ marginBottom: 18 }}>
+          <AlertBanner tone={feedback.tone}>{feedback.text}</AlertBanner>
         </div>
       )}
 
-      {message && (
-        <div
-          className={
-            styles.successMessage
-          }
-        >
-          {message}
-        </div>
-      )}
-
-      <section
-        className={styles.card}
-      >
-        <div
-          className={
-            styles.cardHeader
-          }
-        >
-          <div>
-            <p
-              className={
-                styles.cardEyebrow
-              }
-            >
-              STEP 1
-            </p>
-
-            <h2>
-              Personal Information
-            </h2>
-          </div>
-        </div>
-
-        <form
-          className={styles.form}
-          onSubmit={saveProfile}
-        >
-          <div
-            className={
-              styles.formGrid
-            }
-          >
-            <label>
-              First Name *
-              <input
-                value={
-                  profile.firstName
-                }
-                onChange={(event) =>
-                  updateProfile(
-                    "firstName",
-                    event.target.value,
-                  )
-                }
-                required
-              />
-            </label>
-
-            <label>
-              Last Name
-              <input
-                value={
-                  profile.lastName
-                }
-                onChange={(event) =>
-                  updateProfile(
-                    "lastName",
-                    event.target.value,
-                  )
+      {loading ? (
+        <LoadingSkeleton rows={3} />
+      ) : (
+        <div className={styles.stackLg}>
+          {/* Profile Completion Card */}
+          <section className={styles.card}>
+            <div className={styles.cardHeader}>
+              <div>
+                <h2 className={styles.cardTitle}>Profile Completion</h2>
+                <p className={styles.cardSubtitle}>
+                  Account email: <strong>{user.email}</strong>
+                </p>
+              </div>
+              <GenericBadge
+                label={`${completion?.percentage ?? 0}% Complete`}
+                tone={
+                  (completion?.percentage ?? 0) >= 100
+                    ? "success"
+                    : (completion?.percentage ?? 0) >= 60
+                      ? "info"
+                      : "warning"
                 }
               />
-            </label>
+            </div>
 
-            <label>
-              Date of Birth
-              <input
-                type="date"
-                value={
-                  profile.dateOfBirth
-                }
-                onChange={(event) =>
-                  updateProfile(
-                    "dateOfBirth",
-                    event.target.value,
-                  )
-                }
+            <div className={styles.progressBar}>
+              <div
+                className={styles.progressFill}
+                style={{ width: `${completion?.percentage ?? 0}%` }}
               />
-            </label>
+            </div>
 
-            <label>
-              Gender
-              <select
-                value={
-                  profile.gender
-                }
-                onChange={(event) =>
-                  updateProfile(
-                    "gender",
-                    event.target.value,
-                  )
-                }
-              >
-                <option value="">
-                  Select gender
-                </option>
-                <option value="Male">
-                  Male
-                </option>
-                <option value="Female">
-                  Female
-                </option>
-                <option value="Other">
-                  Other
-                </option>
-              </select>
-            </label>
+            {completion && completion.missingFields.length > 0 && (
+              <p className={styles.fieldHint} style={{ marginTop: 8 }}>
+                Remaining fields: {completion.missingFields.join(", ")}
+              </p>
+            )}
+          </section>
 
-            <label>
-              State
-              <input
-                value={
-                  profile.state
-                }
-                onChange={(event) =>
-                  updateProfile(
-                    "state",
-                    event.target.value,
-                  )
-                }
-                placeholder="e.g. Delhi"
-              />
-            </label>
+          {/* Personal Profile Form */}
+          <section className={styles.card}>
+            <div className={styles.cardHeader}>
+              <div>
+                <h2 className={styles.cardTitle}>Personal Information</h2>
+                <p className={styles.cardSubtitle}>
+                  Date of birth and category directly determine cutoff-date age limits
+                  and reservation relaxations.
+                </p>
+              </div>
+            </div>
 
-            <label>
-              Category
-              <select
-                value={
-                  profile.category
-                }
-                onChange={(event) =>
-                  updateProfile(
-                    "category",
-                    event.target.value,
-                  )
-                }
-              >
-                <option value="">
-                  Select category
-                </option>
-                <option value="General">
-                  General
-                </option>
-                <option value="OBC">
-                  OBC
-                </option>
-                <option value="SC">
-                  SC
-                </option>
-                <option value="ST">
-                  ST
-                </option>
-                <option value="EWS">
-                  EWS
-                </option>
-              </select>
-            </label>
-          </div>
+            <form onSubmit={handleSaveProfile} className={styles.stackMd}>
+              <div className={styles.formGrid}>
+                <div className={styles.formGroup}>
+                  <label htmlFor="prof-first" className={styles.label}>
+                    First Name *
+                  </label>
+                  <input
+                    id="prof-first"
+                    type="text"
+                    className={styles.input}
+                    value={profileForm.firstName}
+                    onChange={(e) =>
+                      setProfileForm((p) => ({ ...p, firstName: e.target.value }))
+                    }
+                    required
+                  />
+                </div>
 
-          <button
-            type="submit"
-            className={
-              styles.primaryButton
-            }
-            disabled={savingProfile}
-          >
-            {savingProfile
-              ? "Saving..."
-              : "Save Profile"}
-          </button>
-        </form>
-      </section>
+                <div className={styles.formGroup}>
+                  <label htmlFor="prof-last" className={styles.label}>
+                    Last Name
+                  </label>
+                  <input
+                    id="prof-last"
+                    type="text"
+                    className={styles.input}
+                    value={profileForm.lastName}
+                    onChange={(e) =>
+                      setProfileForm((p) => ({ ...p, lastName: e.target.value }))
+                    }
+                  />
+                </div>
 
-      <section
-        className={styles.card}
-      >
-        <div
-          className={
-            styles.cardHeader
-          }
-        >
-          <div>
-            <p
-              className={
-                styles.cardEyebrow
-              }
-            >
-              STEP 2
-            </p>
+                <div className={styles.formGroup}>
+                  <label htmlFor="prof-dob" className={styles.label}>
+                    Date of Birth
+                  </label>
+                  <input
+                    id="prof-dob"
+                    type="date"
+                    className={styles.input}
+                    value={profileForm.dateOfBirth}
+                    onChange={(e) =>
+                      setProfileForm((p) => ({ ...p, dateOfBirth: e.target.value }))
+                    }
+                  />
+                </div>
 
-            <h2>
-              Education
-            </h2>
-          </div>
-        </div>
-
-        {education.length > 0 && (
-          <div
-            className={
-              styles.educationList
-            }
-          >
-            {education.map(
-              (record) => (
-                <article
-                  key={record.id}
-                  className={
-                    styles.educationItem
-                  }
-                >
-                  <div>
-                    <h3>
-                      {
-                        record.qualification
-                      }
-                    </h3>
-
-                    {record.courseName && (
-                      <p>
-                        {
-                          record.courseName
-                        }
-                      </p>
-                    )}
-
-                    {record.stream && (
-                      <p>
-                        Stream:{" "}
-                        {
-                          record.stream
-                        }
-                      </p>
-                    )}
-
-                    {record.institutionName && (
-                      <p>
-                        {
-                          record.institutionName
-                        }
-                      </p>
-                    )}
-
-                    {record.passingYear && (
-                      <p>
-                        Passing Year:{" "}
-                        {
-                          record.passingYear
-                        }
-                      </p>
-                    )}
-
-                    {record.percentage !==
-                      null && (
-                      <p>
-                        Percentage:{" "}
-                        {
-                          record.percentage
-                        }%
-                      </p>
-                    )}
-                  </div>
-
-                  <div
-                    className={
-                      styles.educationActions
+                <div className={styles.formGroup}>
+                  <label htmlFor="prof-category" className={styles.label}>
+                    Category
+                  </label>
+                  <select
+                    id="prof-category"
+                    className={styles.select}
+                    value={profileForm.category}
+                    onChange={(e) =>
+                      setProfileForm((p) => ({ ...p, category: e.target.value }))
                     }
                   >
-                    <button
-                      type="button"
-                      className={
-                        styles.editButton
-                      }
-                      onClick={() =>
-                        startEditingEducation(
-                          record,
-                        )
-                      }
-                      disabled={
-                        deletingEducationId !==
-                        null ||
-                        savingEducation
-                      }
-                    >
-                      Edit
-                    </button>
+                    <option value="">Select category</option>
+                    <option value="General">General (UR)</option>
+                    <option value="OBC">OBC (NCL)</option>
+                    <option value="SC">SC</option>
+                    <option value="ST">ST</option>
+                    <option value="EWS">EWS</option>
+                  </select>
+                </div>
 
-                    <button
-                      type="button"
-                      className={
-                        styles.deleteButton
-                      }
-                      onClick={() =>
-                        deleteEducation(
-                          record.id,
-                        )
-                      }
-                      disabled={
-                        deletingEducationId ===
-                        record.id ||
-                        savingEducation
-                      }
-                    >
-                      {deletingEducationId ===
-                      record.id
-                        ? "Deleting..."
-                        : "Delete"}
-                    </button>
+                <div className={styles.formGroup}>
+                  <label htmlFor="prof-gender" className={styles.label}>
+                    Gender
+                  </label>
+                  <select
+                    id="prof-gender"
+                    className={styles.select}
+                    value={profileForm.gender}
+                    onChange={(e) =>
+                      setProfileForm((p) => ({ ...p, gender: e.target.value }))
+                    }
+                  >
+                    <option value="">Select gender</option>
+                    <option value="Male">Male</option>
+                    <option value="Female">Female</option>
+                    <option value="Other">Other</option>
+                  </select>
+                </div>
+
+                <div className={styles.formGroup}>
+                  <label htmlFor="prof-state" className={styles.label}>
+                    State / UT
+                  </label>
+                  <select
+                    id="prof-state"
+                    className={styles.select}
+                    value={profileForm.state}
+                    onChange={(e) =>
+                      setProfileForm((p) => ({ ...p, state: e.target.value }))
+                    }
+                  >
+                    <option value="">Select state / UT</option>
+                    {INDIAN_STATES.map((st) => (
+                      <option key={st} value={st}>
+                        {st}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <button
+                  type="submit"
+                  className={`${styles.btn} ${styles.btnPrimary}`}
+                  disabled={savingProfile}
+                >
+                  {savingProfile ? "Saving profile..." : "Save Personal Profile"}
+                </button>
+              </div>
+            </form>
+          </section>
+
+          {/* Existing Education Records List */}
+          <section className={styles.card}>
+            <div className={styles.cardHeader}>
+              <div>
+                <h2 className={styles.cardTitle}>
+                  Saved Education Records ({educationList.length})
+                </h2>
+                <p className={styles.cardSubtitle}>
+                  You can store multiple qualifications simultaneously (for example,
+                  Class 12 Science with Mathematics AND a B.Voc / Bachelor&apos;s degree).
+                </p>
+              </div>
+            </div>
+
+            {educationList.length === 0 ? (
+              <EmptyState
+                title="No education records added yet"
+                description="Add your Class 12 and degree records below so ExamConnect can verify qualification and stream requirements accurately."
+              />
+            ) : (
+              <div className={styles.stackMd}>
+                {educationList.map((record) => (
+                  <div
+                    key={record.id}
+                    className={styles.postBox}
+                    style={{
+                      display: "flex",
+                      flexDirection: "row",
+                      justifyContent: "space-between",
+                      alignItems: "flex-start",
+                      flexWrap: "wrap",
+                      gap: 12,
+                    }}
+                  >
+                    <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                        <span className={styles.postTitle}>
+                          {record.qualification}
+                          {record.courseName ? ` — ${record.courseName}` : ""}
+                        </span>
+                        {record.stream && (
+                          <GenericBadge label={record.stream} tone="info" />
+                        )}
+                      </div>
+                      <div className={styles.postMeta}>
+                        {[
+                          record.institutionName,
+                          record.boardOrUniversity,
+                          record.passingYear ? `Passed ${record.passingYear}` : null,
+                          record.percentage !== null &&
+                          record.percentage !== undefined
+                            ? `${record.percentage}%`
+                            : null,
+                        ]
+                          .filter(Boolean)
+                          .join(" • ") || "Additional details not specified"}
+                      </div>
+                    </div>
+
+                    <div style={{ display: "flex", gap: 8 }}>
+                      <button
+                        type="button"
+                        className={`${styles.btn} ${styles.btnSecondary} ${styles.btnSm}`}
+                        onClick={() => startEditEducation(record)}
+                      >
+                        <IconEdit size={14} />
+                        Edit
+                      </button>
+                      <button
+                        type="button"
+                        className={`${styles.btn} ${styles.btnDangerOutline} ${styles.btnSm}`}
+                        onClick={() => setDeleteTarget(record)}
+                      >
+                        <IconTrash size={14} />
+                        Delete
+                      </button>
+                    </div>
                   </div>
-                </article>
-              ),
+                ))}
+              </div>
             )}
-          </div>
-        )}
+          </section>
 
-        <form
-          className={styles.form}
-          onSubmit={saveEducation}
-        >
-          <h3
-            className={
-              styles.addEducationTitle
-            }
-          >
-            {isEditing
-              ? "Edit Education"
-              : "Add Education"}
-          </h3>
+          {/* Add / Edit Education Record Form */}
+          <section className={styles.card}>
+            <div className={styles.cardHeader}>
+              <div>
+                <h2 className={styles.cardTitle}>
+                  {editingEduId !== null
+                    ? "Edit Education Record"
+                    : "Add New Education Record"}
+                </h2>
+                <p className={styles.cardSubtitle}>
+                  Adding a Class 12 record preserves your existing Bachelor&apos;s/Master&apos;s
+                  degrees. For SSC CHSL Specified DEO, enter Class 12 with stream
+                  &quot;Science with Mathematics&quot;.
+                </p>
+              </div>
+              {editingEduId !== null && (
+                <button
+                  type="button"
+                  className={`${styles.btn} ${styles.btnSecondary} ${styles.btnSm}`}
+                  onClick={() => {
+                    setEditingEduId(null);
+                    setEduForm(emptyEducation);
+                  }}
+                >
+                  Cancel Editing
+                </button>
+              )}
+            </div>
 
-          <div
-            className={
-              styles.formGrid
-            }
-          >
-            <label>
-              Qualification *
-              <input
-                value={
-                  educationForm.qualification
-                }
-                onChange={(event) =>
-                  updateEducation(
-                    "qualification",
-                    event.target.value,
-                  )
-                }
-                placeholder="e.g. B.Voc, M.Sc, B.Tech"
-                required
-              />
-            </label>
+            <form onSubmit={handleSaveEducation} className={styles.stackMd}>
+              <div className={styles.formGrid}>
+                <div className={styles.formGroup}>
+                  <label htmlFor="edu-qual" className={styles.label}>
+                    Qualification *
+                  </label>
+                  <input
+                    id="edu-qual"
+                    type="text"
+                    list="qualification-suggestions"
+                    className={styles.input}
+                    value={eduForm.qualification}
+                    onChange={(e) =>
+                      setEduForm((p) => ({ ...p, qualification: e.target.value }))
+                    }
+                    placeholder="e.g. Class 12, B.Voc, B.Sc, B.Tech, M.Sc"
+                    required
+                  />
+                  <datalist id="qualification-suggestions">
+                    <option value="Class 10" />
+                    <option value="Class 12" />
+                    <option value="Diploma" />
+                    <option value="B.Voc" />
+                    <option value="B.A." />
+                    <option value="B.Sc." />
+                    <option value="B.Com." />
+                    <option value="B.Tech" />
+                    <option value="BCA" />
+                    <option value="M.Sc." />
+                    <option value="M.A." />
+                    <option value="M.Tech" />
+                  </datalist>
+                </div>
 
-            <label>
-              Course Name
-              <input
-                value={
-                  educationForm.courseName
-                }
-                onChange={(event) =>
-                  updateEducation(
-                    "courseName",
-                    event.target.value,
-                  )
-                }
-                placeholder="e.g. Master of Science"
-              />
-            </label>
+                <div className={styles.formGroup}>
+                  <label htmlFor="edu-stream" className={styles.label}>
+                    Stream / Subject Combination
+                  </label>
+                  <input
+                    id="edu-stream"
+                    type="text"
+                    list="stream-suggestions"
+                    className={styles.input}
+                    value={eduForm.stream}
+                    onChange={(e) =>
+                      setEduForm((p) => ({ ...p, stream: e.target.value }))
+                    }
+                    placeholder="e.g. Science with Mathematics, Software Development, Physics"
+                  />
+                  <datalist id="stream-suggestions">
+                    <option value="Science with Mathematics" />
+                    <option value="Science (PCB)" />
+                    <option value="Commerce" />
+                    <option value="Arts / Humanities" />
+                    <option value="Software Development" />
+                    <option value="Computer Science" />
+                    <option value="Physics" />
+                    <option value="Chemistry" />
+                    <option value="Geology" />
+                  </datalist>
+                </div>
 
-            <label>
-              Stream
-              <input
-                value={
-                  educationForm.stream
-                }
-                onChange={(event) =>
-                  updateEducation(
-                    "stream",
-                    event.target.value,
-                  )
-                }
-                placeholder="e.g. Physics"
-              />
-            </label>
+                <div className={styles.formGroup}>
+                  <label htmlFor="edu-course" className={styles.label}>
+                    Course / Specialization Name
+                  </label>
+                  <input
+                    id="edu-course"
+                    type="text"
+                    className={styles.input}
+                    value={eduForm.courseName}
+                    onChange={(e) =>
+                      setEduForm((p) => ({ ...p, courseName: e.target.value }))
+                    }
+                    placeholder="e.g. Senior Secondary, B.Voc Software Development"
+                  />
+                </div>
 
-            <label>
-              Passing Year
-              <input
-                type="number"
-                min="1900"
-                max="2100"
-                value={
-                  educationForm.passingYear
-                }
-                onChange={(event) =>
-                  updateEducation(
-                    "passingYear",
-                    event.target.value,
-                  )
-                }
-              />
-            </label>
+                <div className={styles.formGroup}>
+                  <label htmlFor="edu-inst" className={styles.label}>
+                    School / College / Institution
+                  </label>
+                  <input
+                    id="edu-inst"
+                    type="text"
+                    className={styles.input}
+                    value={eduForm.institutionName}
+                    onChange={(e) =>
+                      setEduForm((p) => ({
+                        ...p,
+                        institutionName: e.target.value,
+                      }))
+                    }
+                    placeholder="Institution name"
+                  />
+                </div>
 
-            <label>
-              Percentage
-              <input
-                type="number"
-                min="0"
-                max="100"
-                step="0.01"
-                value={
-                  educationForm.percentage
-                }
-                onChange={(event) =>
-                  updateEducation(
-                    "percentage",
-                    event.target.value,
-                  )
-                }
-                placeholder="e.g. 85.2"
-              />
-            </label>
+                <div className={styles.formGroup}>
+                  <label htmlFor="edu-board" className={styles.label}>
+                    Board / University
+                  </label>
+                  <input
+                    id="edu-board"
+                    type="text"
+                    className={styles.input}
+                    value={eduForm.boardOrUniversity}
+                    onChange={(e) =>
+                      setEduForm((p) => ({
+                        ...p,
+                        boardOrUniversity: e.target.value,
+                      }))
+                    }
+                    placeholder="e.g. CBSE, University of Delhi"
+                  />
+                </div>
 
-            <label>
-              Institution
-              <input
-                value={
-                  educationForm.institutionName
-                }
-                onChange={(event) =>
-                  updateEducation(
-                    "institutionName",
-                    event.target.value,
-                  )
-                }
-              />
-            </label>
+                <div className={styles.formGroup}>
+                  <label htmlFor="edu-year" className={styles.label}>
+                    Passing Year
+                  </label>
+                  <input
+                    id="edu-year"
+                    type="number"
+                    min={1950}
+                    max={2035}
+                    className={styles.input}
+                    value={eduForm.passingYear}
+                    onChange={(e) =>
+                      setEduForm((p) => ({ ...p, passingYear: e.target.value }))
+                    }
+                    placeholder="e.g. 2024"
+                  />
+                </div>
 
-            <label
-              className={
-                styles.fullWidth
-              }
-            >
-              Board / University
-              <input
-                value={
-                  educationForm.boardOrUniversity
-                }
-                onChange={(event) =>
-                  updateEducation(
-                    "boardOrUniversity",
-                    event.target.value,
-                  )
-                }
-              />
-            </label>
-          </div>
+                <div className={styles.formGroup}>
+                  <label htmlFor="edu-pct" className={styles.label}>
+                    Percentage (%)
+                  </label>
+                  <input
+                    id="edu-pct"
+                    type="number"
+                    step="0.01"
+                    min={0}
+                    max={100}
+                    className={styles.input}
+                    value={eduForm.percentage}
+                    onChange={(e) =>
+                      setEduForm((p) => ({ ...p, percentage: e.target.value }))
+                    }
+                    placeholder="e.g. 82.5"
+                  />
+                </div>
+              </div>
 
-          <div
-            className={
-              styles.educationFormActions
-            }
-          >
-            <button
-              type="submit"
-              className={
-                styles.primaryButton
-              }
-              disabled={savingEducation}
-            >
-              {savingEducation
-                ? isEditing
-                  ? "Updating..."
-                  : "Adding..."
-                : isEditing
-                  ? "Update Education"
-                  : "Add Education"}
-            </button>
-
-            {isEditing && (
-              <button
-                type="button"
-                className={
-                  styles.cancelButton
-                }
-                onClick={
-                  cancelEditingEducation
-                }
-                disabled={savingEducation}
-              >
-                Cancel
-              </button>
-            )}
-          </div>
-        </form>
-      </section>
-
-      <section
-        className={
-          styles.actionCard
-        }
-      >
-        <div>
-          <h2>
-            Ready to check eligibility?
-          </h2>
-
-          <p>
-            Your latest profile and education
-            details will be used to evaluate
-            government exam requirements.
-          </p>
+              <div>
+                <button
+                  type="submit"
+                  className={`${styles.btn} ${styles.btnBlue}`}
+                  disabled={savingEdu}
+                >
+                  <IconPlus size={15} />
+                  {savingEdu
+                    ? "Saving..."
+                    : editingEduId !== null
+                      ? "Update Education Record"
+                      : "Add Education Record"}
+                </button>
+              </div>
+            </form>
+          </section>
         </div>
+      )}
 
-        <button
-          type="button"
-          className={
-            styles.primaryButton
-          }
-          onClick={goToDashboard}
-        >
-          Check My Exams →
-        </button>
-      </section>
-    </main>
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        title="Delete Education Record"
+        message={
+          deleteTarget
+            ? `Are you sure you want to delete "${deleteTarget.qualification}${
+                deleteTarget.stream ? ` (${deleteTarget.stream})` : ""
+              }"? Your eligibility will be recalculated immediately.`
+            : ""
+        }
+        confirmLabel="Delete Record"
+        destructive
+        loading={deletingEdu}
+        onConfirm={confirmDeleteEducation}
+        onCancel={() => setDeleteTarget(null)}
+      />
+    </AppShell>
   );
 }

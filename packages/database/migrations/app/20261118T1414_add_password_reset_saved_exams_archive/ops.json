@@ -1,0 +1,488 @@
+[
+  {
+    "id": "table.passwordResetToken",
+    "label": "Create table \"passwordResetToken\"",
+    "summary": "Creates table \"passwordResetToken\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "table",
+        "name": "passwordResetToken"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure table \"passwordResetToken\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"passwordResetToken\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "create table \"passwordResetToken\"",
+        "sql": "CREATE TABLE \"public\".\"passwordResetToken\" (\n  \"createdAt\" timestamptz DEFAULT (now()) NOT NULL,\n  \"expiresAt\" timestamptz NOT NULL,\n  \"id\" SERIAL NOT NULL,\n  \"tokenHash\" text NOT NULL,\n  \"usedAt\" timestamptz,\n  \"userId\" int4 NOT NULL,\n  PRIMARY KEY (\"id\")\n)",
+        "params": []
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify table \"passwordResetToken\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"passwordResetToken\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "table.savedExam",
+    "label": "Create table \"savedExam\"",
+    "summary": "Creates table \"savedExam\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "table",
+        "name": "savedExam"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure table \"savedExam\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"savedExam\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "create table \"savedExam\"",
+        "sql": "CREATE TABLE \"public\".\"savedExam\" (\n  \"createdAt\" timestamptz DEFAULT (now()) NOT NULL,\n  \"examId\" int4 NOT NULL,\n  \"id\" SERIAL NOT NULL,\n  \"userId\" int4 NOT NULL,\n  PRIMARY KEY (\"id\")\n)",
+        "params": []
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify table \"savedExam\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"savedExam\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "column.public.exam.isArchived",
+    "label": "Add column \"isArchived\" to \"exam\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "column",
+        "name": "isArchived",
+        "table": "exam"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure column \"isArchived\" is missing",
+        "sql": "SELECT NOT EXISTS (SELECT 1 AS \"one\" FROM \"information_schema\".\"columns\" WHERE (\"table_schema\" = $1 AND \"table_name\" = $2 AND \"column_name\" = $3)) AS \"result\"",
+        "params": [
+          "public",
+          "exam",
+          "isArchived"
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "add column \"isArchived\"",
+        "sql": "ALTER TABLE \"public\".\"exam\" ADD COLUMN \"isArchived\" bool DEFAULT false NOT NULL"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify column \"isArchived\" exists",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"information_schema\".\"columns\" WHERE (\"table_schema\" = $1 AND \"table_name\" = $2 AND \"column_name\" = $3)) AS \"result\"",
+        "params": [
+          "public",
+          "exam",
+          "isArchived"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "unique.passwordResetToken.passwordResetToken_tokenHash_key",
+    "label": "Add unique constraint on \"passwordResetToken\" (tokenHash)",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "unique",
+        "name": "passwordResetToken_tokenHash_key",
+        "table": "passwordResetToken"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure constraint \"passwordResetToken_tokenHash_key\" does not exist",
+        "sql": "SELECT NOT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "passwordResetToken_tokenHash_key",
+          "public",
+          "\"public\".\"passwordResetToken\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "add unique constraint \"passwordResetToken_tokenHash_key\"",
+        "sql": "ALTER TABLE \"public\".\"passwordResetToken\" ADD CONSTRAINT \"passwordResetToken_tokenHash_key\" UNIQUE (\"tokenHash\")"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify constraint \"passwordResetToken_tokenHash_key\" exists",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "passwordResetToken_tokenHash_key",
+          "public",
+          "\"public\".\"passwordResetToken\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "unique.savedExam.savedExam_userId_examId_key",
+    "label": "Add unique constraint on \"savedExam\" (userId, examId)",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "unique",
+        "name": "savedExam_userId_examId_key",
+        "table": "savedExam"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure constraint \"savedExam_userId_examId_key\" does not exist",
+        "sql": "SELECT NOT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "savedExam_userId_examId_key",
+          "public",
+          "\"public\".\"savedExam\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "add unique constraint \"savedExam_userId_examId_key\"",
+        "sql": "ALTER TABLE \"public\".\"savedExam\" ADD CONSTRAINT \"savedExam_userId_examId_key\" UNIQUE (\"userId\", \"examId\")"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify constraint \"savedExam_userId_examId_key\" exists",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "savedExam_userId_examId_key",
+          "public",
+          "\"public\".\"savedExam\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "index.passwordResetToken.passwordResetToken_expiresAt_idx_6b6b8c10",
+    "label": "Create index \"passwordResetToken_expiresAt_idx_6b6b8c10\" on \"passwordResetToken\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "index",
+        "name": "passwordResetToken_expiresAt_idx_6b6b8c10",
+        "table": "passwordResetToken"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure index \"passwordResetToken_expiresAt_idx_6b6b8c10\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"passwordResetToken_expiresAt_idx_6b6b8c10\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "create index \"passwordResetToken_expiresAt_idx_6b6b8c10\"",
+        "sql": "CREATE INDEX \"passwordResetToken_expiresAt_idx_6b6b8c10\" ON \"public\".\"passwordResetToken\" (\"expiresAt\")",
+        "params": []
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify index \"passwordResetToken_expiresAt_idx_6b6b8c10\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"passwordResetToken_expiresAt_idx_6b6b8c10\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "index.passwordResetToken.passwordResetToken_userId_idx_a489d58a",
+    "label": "Create index \"passwordResetToken_userId_idx_a489d58a\" on \"passwordResetToken\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "index",
+        "name": "passwordResetToken_userId_idx_a489d58a",
+        "table": "passwordResetToken"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure index \"passwordResetToken_userId_idx_a489d58a\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"passwordResetToken_userId_idx_a489d58a\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "create index \"passwordResetToken_userId_idx_a489d58a\"",
+        "sql": "CREATE INDEX \"passwordResetToken_userId_idx_a489d58a\" ON \"public\".\"passwordResetToken\" (\"userId\")",
+        "params": []
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify index \"passwordResetToken_userId_idx_a489d58a\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"passwordResetToken_userId_idx_a489d58a\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "index.savedExam.savedExam_examId_idx_a57bdadd",
+    "label": "Create index \"savedExam_examId_idx_a57bdadd\" on \"savedExam\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "index",
+        "name": "savedExam_examId_idx_a57bdadd",
+        "table": "savedExam"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure index \"savedExam_examId_idx_a57bdadd\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"savedExam_examId_idx_a57bdadd\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "create index \"savedExam_examId_idx_a57bdadd\"",
+        "sql": "CREATE INDEX \"savedExam_examId_idx_a57bdadd\" ON \"public\".\"savedExam\" (\"examId\")",
+        "params": []
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify index \"savedExam_examId_idx_a57bdadd\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"savedExam_examId_idx_a57bdadd\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "index.savedExam.savedExam_userId_idx_a489d58a",
+    "label": "Create index \"savedExam_userId_idx_a489d58a\" on \"savedExam\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "index",
+        "name": "savedExam_userId_idx_a489d58a",
+        "table": "savedExam"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure index \"savedExam_userId_idx_a489d58a\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"savedExam_userId_idx_a489d58a\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "create index \"savedExam_userId_idx_a489d58a\"",
+        "sql": "CREATE INDEX \"savedExam_userId_idx_a489d58a\" ON \"public\".\"savedExam\" (\"userId\")",
+        "params": []
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify index \"savedExam_userId_idx_a489d58a\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"savedExam_userId_idx_a489d58a\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "foreignKey.passwordResetToken.passwordResetToken_userId_fkey",
+    "label": "Add foreign key \"passwordResetToken_userId_fkey\" on \"passwordResetToken\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "foreignKey",
+        "name": "passwordResetToken_userId_fkey",
+        "table": "passwordResetToken"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure FK \"passwordResetToken_userId_fkey\" does not exist",
+        "sql": "SELECT NOT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "passwordResetToken_userId_fkey",
+          "public",
+          "\"public\".\"passwordResetToken\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "add FK \"passwordResetToken_userId_fkey\"",
+        "sql": "ALTER TABLE \"public\".\"passwordResetToken\"\nADD CONSTRAINT \"passwordResetToken_userId_fkey\"\nFOREIGN KEY (\"userId\")\nREFERENCES \"public\".\"user\" (\"id\")"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify FK \"passwordResetToken_userId_fkey\" exists",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "passwordResetToken_userId_fkey",
+          "public",
+          "\"public\".\"passwordResetToken\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "foreignKey.savedExam.savedExam_userId_fkey",
+    "label": "Add foreign key \"savedExam_userId_fkey\" on \"savedExam\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "foreignKey",
+        "name": "savedExam_userId_fkey",
+        "table": "savedExam"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure FK \"savedExam_userId_fkey\" does not exist",
+        "sql": "SELECT NOT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "savedExam_userId_fkey",
+          "public",
+          "\"public\".\"savedExam\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "add FK \"savedExam_userId_fkey\"",
+        "sql": "ALTER TABLE \"public\".\"savedExam\"\nADD CONSTRAINT \"savedExam_userId_fkey\"\nFOREIGN KEY (\"userId\")\nREFERENCES \"public\".\"user\" (\"id\")"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify FK \"savedExam_userId_fkey\" exists",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "savedExam_userId_fkey",
+          "public",
+          "\"public\".\"savedExam\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "foreignKey.savedExam.savedExam_examId_fkey",
+    "label": "Add foreign key \"savedExam_examId_fkey\" on \"savedExam\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "foreignKey",
+        "name": "savedExam_examId_fkey",
+        "table": "savedExam"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure FK \"savedExam_examId_fkey\" does not exist",
+        "sql": "SELECT NOT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "savedExam_examId_fkey",
+          "public",
+          "\"public\".\"savedExam\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "add FK \"savedExam_examId_fkey\"",
+        "sql": "ALTER TABLE \"public\".\"savedExam\"\nADD CONSTRAINT \"savedExam_examId_fkey\"\nFOREIGN KEY (\"examId\")\nREFERENCES \"public\".\"exam\" (\"id\")"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify FK \"savedExam_examId_fkey\" exists",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "savedExam_examId_fkey",
+          "public",
+          "\"public\".\"savedExam\""
+        ]
+      }
+    ]
+  }
+]

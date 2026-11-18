@@ -1,0 +1,25 @@
+FROM node:22-slim AS base
+ENV PNPM_HOME="/pnpm"
+ENV PATH="$PNPM_HOME:$PATH"
+RUN corepack enable
+
+WORKDIR /app
+
+COPY pnpm-workspace.yaml package.json pnpm-lock.yaml tsconfig.base.json ./
+COPY packages/ ./packages/
+COPY apps/web/package.json apps/web/tsconfig.json apps/web/next.config.ts ./apps/web/
+
+RUN pnpm install --frozen-lockfile --filter web...
+
+COPY apps/web/src ./apps/web/src
+COPY apps/web/public ./apps/web/public
+
+ENV NODE_ENV=production
+ENV NEXT_TELEMETRY_DISABLED=1
+ENV NEXT_PUBLIC_API_URL=/api/backend
+
+RUN pnpm --filter web build
+
+EXPOSE 3000
+
+CMD ["sh", "-c", "pnpm --filter web exec next start -H 0.0.0.0 -p ${PORT:-3000}"]

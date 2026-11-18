@@ -10,6 +10,22 @@ updatedAt   DateTime
 studentProfile       StudentProfile?
 sessions             Session[]
 studentNotifications StudentNotification[]
+passwordResetTokens  PasswordResetToken[]
+savedExams           SavedExam[]
+}
+
+model PasswordResetToken {
+id        Int       @id @default(autoincrement())
+userId    Int
+tokenHash String    @unique
+expiresAt DateTime
+createdAt DateTime  @default(now())
+usedAt    DateTime?
+
+user User @relation(fields: [userId], references: [id])
+
+@@index([userId])
+@@index([expiresAt])
 }
 
 model Session {
@@ -65,12 +81,28 @@ conductingBody  String
 examType        String?
 description     String?
 officialWebsite String?
+isArchived      Boolean  @default(false)
 createdAt       DateTime @default(now())
 updatedAt       DateTime
 
 posts                Post[]
 eligibilityRules     EligibilityRule[]
 applicationDeadlines ApplicationDeadline[]
+savedExams           SavedExam[]
+}
+
+model SavedExam {
+id        Int      @id @default(autoincrement())
+userId    Int
+examId    Int
+createdAt DateTime @default(now())
+
+user User @relation(fields: [userId], references: [id])
+exam Exam @relation(fields: [examId], references: [id])
+
+@@unique([userId, examId])
+@@index([userId])
+@@index([examId])
 }
 
 model Post {

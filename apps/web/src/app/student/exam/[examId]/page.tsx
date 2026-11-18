@@ -1,1079 +1,483 @@
 "use client";
 
+import { useEffect, useState } from "react";
+import Link from "next/link";
+import { useParams } from "next/navigation";
+import styles from "../../../../components/ui.module.css";
+import { AppShell } from "../../../../components/AppShell";
 import {
-  useEffect,
-  useMemo,
-  useState,
-} from "react";
+  AlertBanner,
+  EmptyState,
+  LoadingSkeleton,
+} from "../../../../components/FeedbackStates";
 import {
-  useParams,
-  useRouter,
-} from "next/navigation";
-import styles from "./exam.module.css";
-
-type Deadline = {
-  id: number;
-  applicationUrl: string | null;
-  status: string;
-  applicationStart: string | null;
-  applicationEnd: string | null;
-  examDate: string | null;
-};
-
-type Source = {
-  id: number;
-  organization: string;
-  notificationTitle: string;
-  notificationDate: string | null;
-  officialUrl: string;
-  notificationIdentifier: string | null;
-  dateImported: string;
-  lastVerifiedAt: string | null;
-};
-
-type ExamResult = {
-  exam: {
-    id: number;
-    name: string;
-    conductingBody: string;
-    examType: string;
-    description: string | null;
-    officialWebsite: string | null;
-  };
-  post: {
-    id: number;
-    name: string;
-    code: string | null;
-    department: string | null;
-    vacancies: number | null;
-    qualification: string | null;
-    description: string | null;
-  } | null;
-  eligible: boolean;
-  reasons: string[];
-  sources: Source[];
-  deadlines: Deadline[];
-};
-
-type ApiResponse = {
-  results: ExamResult[];
-};
-
-const API_URL =
-  process.env.NEXT_PUBLIC_API_URL ??
-  "http://localhost:4000";
-
-function formatDate(
-  value: string | null,
-): string {
-  if (!value) {
-    return "Not available";
-  }
-
-  const date = new Date(value);
-
-  if (Number.isNaN(date.getTime())) {
-    return "Not available";
-  }
-
-  return date.toLocaleDateString(
-    "en-IN",
-    {
-      day: "2-digit",
-      month: "short",
-      year: "numeric",
-    },
-  );
-}
-
-function statusClass(
-  status: string,
-): string {
-  switch (status) {
-    case "OPEN":
-      return styles.statusOpen;
-
-    case "UPCOMING":
-      return styles.statusUpcoming;
-
-    case "CLOSED":
-      return styles.statusClosed;
-
-    default:
-      return styles.statusUnknown;
-  }
-}
-
-function cleanReason(
-  reason: string,
-): string {
-  return reason
-    .replace(
-      /^Requirement satisfied:\s*/i,
-      "",
-    )
-    .replace(
-      /^Requirement failed:\s*/i,
-      "",
-    )
-    .replace(
-      /^Requirement not satisfied:\s*/i,
-      "",
-    )
-    .replace(
-      /^Requirement (?:not )?satisfied:\s*/i,
-      "",
-    )
-    .trim();
-}
+  IconArrowLeft,
+  IconBookmark,
+  IconCheckCircle,
+  IconExternalLink,
+  IconFileText,
+  IconXCircle,
+} from "../../../../components/Icons";
+import {
+  DeadlineStatusBadge,
+  EligibilityBadge,
+  GenericBadge,
+} from "../../../../components/StatusBadge";
+import { apiFetch, cleanReason, formatDate } from "../../../../lib/api";
+import { useAuthGuard } from "../../../../lib/useAuthGuard";
+import type { ExamResult } from "../../../../lib/types";
 
 export default function ExamDetailsPage() {
-  const router = useRouter();
+  const { user, checking } = useAuthGuard();
   const params = useParams();
+  const examId = Number(params.examId);
 
-  const examId = Number(
-    params.examId,
-  );
-
-  const [results, setResults] =
-    useState<ExamResult[]>([]);
-
-  const [loading, setLoading] =
-    useState(true);
-
-  const [error, setError] =
-    useState<string | null>(null);
+  const [results, setResults] = useState<ExamResult[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [savingBookmark, setSavingBookmark] = useState(false);
 
   useEffect(() => {
-    async function loadExamDetails() {
+    if (!user) return;
+    if (!Number.isInteger(examId) || examId <= 0) {
+      setError("Invalid examination ID.");
+      setLoading(false);
+      return;
+    }
+
+    let active = true;
+    async function loadExam() {
       try {
         setLoading(true);
         setError(null);
-
-        if (
-          !Number.isInteger(examId) ||
-          examId <= 0
-        ) {
-          throw new Error(
-            "Invalid exam ID.",
-          );
-        }
-
-        const response = await fetch(
-          `${API_URL}/student/eligible-exams`,
-          {
-            method: "GET",
-            credentials: "include",
-            cache: "no-store",
-          },
+        const data = await apiFetch<{ results: ExamResult[] }>(
+          `/student/exams/${examId}/eligibility`,
         );
-
-        if (response.status === 401) {
-          router.push("/");
-          return;
-        }
-
-        if (!response.ok) {
-          throw new Error(
-            `API request failed with status ${response.status}.`,
-          );
-        }
-
-        const data =
-          (await response.json()) as ApiResponse;
-
-        const examResults =
-          (data.results ?? []).filter(
-            (result) =>
-              result.exam.id === examId,
-          );
-
-        if (
-          examResults.length === 0
-        ) {
-          throw new Error(
-            "Exam details could not be found.",
-          );
-        }
-
-        setResults(examResults);
-      } catch (requestError) {
+        if (!active) return;
+        setResults(data.results ?? []);
+      } catch (err) {
+        if (!active) return;
         setError(
-          requestError instanceof Error
-            ? requestError.message
-            : "Unable to load exam details.",
+          err instanceof Error ? err.message : "Unable to load examination details.",
         );
       } finally {
-        setLoading(false);
+        if (active) setLoading(false);
       }
     }
 
-    void loadExamDetails();
-  }, [examId, router]);
+    void loadExam();
+    return () => {
+      active = false;
+    };
+  }, [user, examId]);
 
-  const exam = results[0]?.exam;
+  const first = results[0] ?? null;
+  const isSaved = Boolean(first?.saved);
 
-  const eligiblePosts = useMemo(
-    () =>
-      results.filter(
-        (result) =>
-          result.post !== null &&
-          result.eligible,
-      ),
-    [results],
-  );
-
-  const ineligiblePosts = useMemo(
-    () =>
-      results.filter(
-        (result) =>
-          result.post !== null &&
-          !result.eligible,
-      ),
-    [results],
-  );
-
-  const allDeadlines = useMemo(
-    () => {
-      const deadlines: Array<
-        Deadline & {
-          postName: string;
-        }
-      > = [];
-
-      for (const result of results) {
-        for (const deadline of result.deadlines) {
-          deadlines.push({
-            ...deadline,
-            postName:
-              result.post?.name ??
-              "Exam Level",
-          });
-        }
-      }
-
-      /*
-       * Keep one deadline for the same
-       * deadline ID + post combination.
-       */
-      return Array.from(
-        new Map(
-          deadlines.map(
-            (deadline) => [
-              `${deadline.id}-${deadline.postName}`,
-              deadline,
-            ],
-          ),
-        ).values(),
+  async function handleToggleSave() {
+    if (!first) return;
+    try {
+      setSavingBookmark(true);
+      await apiFetch(`/student/saved-exams/${first.exam.id}`, {
+        method: isSaved ? "DELETE" : "POST",
+      });
+      setResults((prev) => prev.map((r) => ({ ...r, saved: !isSaved })));
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Failed to update bookmark.",
       );
-    },
-    [results],
-  );
+    } finally {
+      setSavingBookmark(false);
+    }
+  }
 
-  const sources = useMemo(
-    () => {
-      return Array.from(
-        new Map(
-          results
-            .flatMap(
-              (result) =>
-                result.sources,
-            )
-            .map((source) => [
-              source.id,
-              source,
-            ]),
-        ).values(),
-      );
-    },
-    [results],
-  );
-
-  if (loading) {
+  if (checking || !user) {
     return (
-      <main
-        className={styles.page}
-      >
-        <section
-          className={styles.loadingCard}
-        >
-          Loading exam details...
+      <main className={styles.authCentered}>
+        <section className={styles.authCard}>
+          <LoadingSkeleton rows={2} />
         </section>
       </main>
     );
   }
 
-  if (error || !exam) {
-    return (
-      <main
-        className={styles.page}
-      >
-        <section
-          className={styles.errorCard}
-        >
-          <button
-            type="button"
-            className={styles.backButton}
-            onClick={() =>
-              router.push("/")
-            }
-          >
-            ← Dashboard
-          </button>
+  const allSources = Array.from(
+    new Map(results.flatMap((r) => r.sources).map((s) => [s.id, s])).values(),
+  );
+  const allDeadlines = Array.from(
+    new Map(results.flatMap((r) => r.deadlines).map((d) => [d.id, d])).values(),
+  );
+  const anyEligible = results.some((r) => r.eligible);
 
-          <h1>
-            Unable to load exam
-          </h1>
-
-          <p>
-            {error ??
-              "Exam details could not be found."}
-          </p>
-        </section>
-      </main>
-    );
-  }
+  // Exam-level rules from first item (shared across exam)
+  const examLevelRules = (first?.ruleEvaluations ?? []).filter(
+    (r) => r.scope === "EXAM",
+  );
 
   return (
-    <main className={styles.page}>
-      <header
-        className={styles.header}
-      >
-        <button
-          type="button"
-          className={styles.backButton}
-          onClick={() =>
-            router.push("/")
+    <AppShell user={user} title="Examination Details">
+      <div style={{ marginBottom: 16 }}>
+        <Link
+          href="/"
+          className={`${styles.btn} ${styles.btnSecondary} ${styles.btnSm}`}
+        >
+          <IconArrowLeft size={14} />
+          Back to Dashboard
+        </Link>
+      </div>
+
+      {loading ? (
+        <LoadingSkeleton rows={4} />
+      ) : error ? (
+        <AlertBanner tone="error">{error}</AlertBanner>
+      ) : !first ? (
+        <EmptyState
+          title="Examination not found"
+          description="The requested examination does not exist or has been archived."
+          action={
+            <Link href="/" className={`${styles.btn} ${styles.btnPrimary}`}>
+              Return to Dashboard
+            </Link>
           }
-        >
-          ← Dashboard
-        </button>
-
-        <p className={styles.eyebrow}>
-          EXAMCONNECT
-        </p>
-
-        <h1>
-          {exam.name}
-        </h1>
-
-        <p
-          className={
-            styles.organization
-          }
-        >
-          {exam.conductingBody}
-        </p>
-
-        <div
-          className={styles.headerMeta}
-        >
-          <span>
-            {exam.examType}
-          </span>
-
-          <span>
-            {eligiblePosts.length} eligible
-            post
-            {eligiblePosts.length !== 1
-              ? "s"
-              : ""}
-          </span>
-        </div>
-      </header>
-
-      <section
-        className={styles.infoGrid}
-      >
-        <article
-          className={styles.infoCard}
-        >
-          <span
-            className={styles.label}
-          >
-            Conducting Body
-          </span>
-
-          <strong>
-            {exam.conductingBody}
-          </strong>
-        </article>
-
-        <article
-          className={styles.infoCard}
-        >
-          <span
-            className={styles.label}
-          >
-            Exam Type
-          </span>
-
-          <strong>
-            {exam.examType}
-          </strong>
-        </article>
-
-        <article
-          className={styles.infoCard}
-        >
-          <span
-            className={styles.label}
-          >
-            Eligible Posts
-          </span>
-
-          <strong>
-            {eligiblePosts.length}
-          </strong>
-        </article>
-
-        <article
-          className={styles.infoCard}
-        >
-          <span
-            className={styles.label}
-          >
-            Total Posts
-          </span>
-
-          <strong>
-            {
-              results.filter(
-                (result) =>
-                  result.post !== null,
-              ).length
-            }
-          </strong>
-        </article>
-      </section>
-
-      {exam.description && (
-        <section
-          className={styles.section}
-        >
-          <div
-            className={
-              styles.sectionHeader
-            }
-          >
-            <p
-              className={styles.eyebrow}
-            >
-              ABOUT THE EXAM
-            </p>
-
-            <h2>
-              Exam Description
-            </h2>
-          </div>
-
-          <div
-            className={styles.textCard}
-          >
-            <p>
-              {exam.description}
-            </p>
-          </div>
-        </section>
-      )}
-
-      <section
-        className={styles.section}
-      >
-        <div
-          className={
-            styles.sectionHeader
-          }
-        >
-          <div>
-            <p
-              className={styles.eyebrow}
-            >
-              ELIGIBILITY
-            </p>
-
-            <h2>
-              Eligible Posts
-            </h2>
-          </div>
-
-          <span
-            className={
-              styles.countBadge
-            }
-          >
-            {eligiblePosts.length}
-          </span>
-        </div>
-
-        {eligiblePosts.length ===
-        0 ? (
-          <div
-            className={
-              styles.emptyCard
-            }
-          >
-            No eligible posts found
-            for this exam.
-          </div>
-        ) : (
-          <div
-            className={
-              styles.postGrid
-            }
-          >
-            {eligiblePosts.map(
-              (result) => {
-                const post =
-                  result.post!;
-
-                return (
-                  <article
-                    key={post.id}
-                    className={
-                      styles.postCard
-                    }
-                  >
-                    <div
-                      className={
-                        styles.postHeader
-                      }
-                    >
-                      <div>
-                        <span
-                          className={
-                            styles.eligibleBadge
-                          }
-                        >
-                          ✓ Eligible
-                        </span>
-
-                        <h3>
-                          {post.name}
-                        </h3>
-                      </div>
-
-                      {post.code && (
-                        <span
-                          className={
-                            styles.postCode
-                          }
-                        >
-                          {post.code}
-                        </span>
-                      )}
-                    </div>
-
-                    <div
-                      className={
-                        styles.detailGrid
-                      }
-                    >
-                      <div>
-                        <span
-                          className={
-                            styles.label
-                          }
-                        >
-                          Department
-                        </span>
-
-                        <p>
-                          {post.department ??
-                            "Not available"}
-                        </p>
-                      </div>
-
-                      <div>
-                        <span
-                          className={
-                            styles.label
-                          }
-                        >
-                          Vacancies
-                        </span>
-
-                        <p>
-                          {post.vacancies ??
-                            "Not available"}
-                        </p>
-                      </div>
-
-                      <div
-                        className={
-                          styles.fullWidth
-                        }
-                      >
-                        <span
-                          className={
-                            styles.label
-                          }
-                        >
-                          Required Qualification
-                        </span>
-
-                        <p>
-                          {post.qualification ??
-                            "Not available"}
-                        </p>
-                      </div>
-                    </div>
-
-                    {post.description && (
-                      <div
-                        className={
-                          styles.descriptionBox
-                        }
-                      >
-                        <span
-                          className={
-                            styles.label
-                          }
-                        >
-                          Post Description
-                        </span>
-
-                        <p>
-                          {post.description}
-                        </p>
-                      </div>
-                    )}
-
-                    <div
-                      className={
-                        styles.reasonsBox
-                      }
-                    >
-                      <span
-                        className={
-                          styles.label
-                        }
-                      >
-                        Why you qualify
-                      </span>
-
-                      {result.reasons.map(
-                        (
-                          reason,
-                          index,
-                        ) => (
-                          <p
-                            key={`${result.post?.id ?? "exam"}-eligible-reason-${index}`}
-                            className={
-                              styles.reason
-                            }
-                          >
-                            ✓{" "}
-                            {cleanReason(
-                              reason,
-                            )}
-                          </p>
-                        ),
-                      )}
-                    </div>
-                  </article>
-                );
-              },
-            )}
-          </div>
-        )}
-      </section>
-
-      {ineligiblePosts.length >
-        0 && (
-        <section
-          className={styles.section}
-        >
-          <div
-            className={
-              styles.sectionHeader
-            }
-          >
-            <div>
-              <p
-                className={
-                  styles.eyebrow
-                }
-              >
-                OTHER POSTS
-              </p>
-
-              <h2>
-                Posts you do not
-                qualify for
-              </h2>
-            </div>
-
-            <span
-              className={
-                styles.countBadge
-              }
-            >
-              {ineligiblePosts.length}
-            </span>
-          </div>
-
-          <div
-            className={
-              styles.ineligibleList
-            }
-          >
-            {ineligiblePosts.map(
-              (result) => {
-                const post =
-                  result.post!;
-
-                return (
-                  <article
-                    key={post.id}
-                    className={
-                      styles.ineligibleCard
-                    }
-                  >
-                    <div>
-                      <div
-                        className={
-                          styles.postHeader
-                        }
-                      >
-                        <div>
-                          <span
-                            className={
-                              styles.notEligibleBadge
-                            }
-                          >
-                            ✕ Not Eligible
-                          </span>
-
-                          <h3>
-                            {post.name}
-                          </h3>
-                        </div>
-
-                        {post.code && (
-                          <span
-                            className={
-                              styles.postCode
-                            }
-                          >
-                            {post.code}
-                          </span>
-                        )}
-                      </div>
-
-                      {post.department && (
-                        <p>
-                          {post.department}
-                        </p>
-                      )}
-
-                      {post.vacancies !==
-                        null && (
-                        <p>
-                          Vacancies:{" "}
-                          <strong>
-                            {
-                              post.vacancies
-                            }
-                          </strong>
-                        </p>
-                      )}
-
-                      {post.qualification && (
-                        <div
-                          className={
-                            styles.descriptionBox
-                          }
-                        >
-                          <span
-                            className={
-                              styles.label
-                            }
-                          >
-                            Required Qualification
-                          </span>
-
-                          <p>
-                            {
-                              post.qualification
-                            }
-                          </p>
-                        </div>
-                      )}
-
-                      <div
-                        className={
-                          styles.reasonsBox
-                        }
-                      >
-                        <span
-                          className={
-                            styles.label
-                          }
-                        >
-                          Why you are not eligible
-                        </span>
-
-                        {result.reasons.length >
-                        0 ? (
-                          result.reasons.map(
-                            (
-                              reason,
-                              index,
-                            ) => (
-                              <p
-                                key={`${result.post?.id ?? "exam"}-ineligible-reason-${index}`}
-                                className={
-                                  styles.reason
-                                }
-                              >
-                                ✕{" "}
-                                {cleanReason(
-                                  reason,
-                                )}
-                              </p>
-                            ),
-                          )
-                        ) : (
-                          <p
-                            className={
-                              styles.reason
-                            }
-                          >
-                            ✕ You do not meet
-                            the eligibility
-                            requirements for
-                            this post.
-                          </p>
-                        )}
-                      </div>
-                    </div>
-                  </article>
-                );
-              },
-            )}
-          </div>
-        </section>
-      )}
-
-      {allDeadlines.length >
-        0 && (
-        <section
-          className={styles.section}
-        >
-          <div
-            className={
-              styles.sectionHeader
-            }
-          >
-            <div>
-              <p
-                className={
-                  styles.eyebrow
-                }
-              >
-                IMPORTANT DATES
-              </p>
-
-              <h2>
-                Applications & Exam
-                Dates
-              </h2>
-            </div>
-          </div>
-
-          <div
-            className={
-              styles.deadlineList
-            }
-          >
-            {allDeadlines.map(
-              (
-                deadline,
-                deadlineIndex,
-              ) => (
-                <article
-                  key={`${deadline.id}-${deadline.postName}-${deadlineIndex}`}
-                  className={
-                    styles.deadlineCard
-                  }
-                >
-                  <div>
-                    <span
-                      className={`${styles.statusBadge} ${statusClass(
-                        deadline.status,
-                      )}`}
-                    >
-                      {deadline.status}
-                    </span>
-
-                    <h3>
-                      {
-                        deadline.postName
-                      }
-                    </h3>
-
-                    <p>
-                      Application Start:{" "}
-                      <strong>
-                        {formatDate(
-                          deadline.applicationStart,
-                        )}
-                      </strong>
-                    </p>
-
-                    <p>
-                      Last Date:{" "}
-                      <strong>
-                        {formatDate(
-                          deadline.applicationEnd,
-                        )}
-                      </strong>
-                    </p>
-
-                    <p>
-                      Exam Date:{" "}
-                      <strong>
-                        {formatDate(
-                          deadline.examDate,
-                        )}
-                      </strong>
-                    </p>
-                  </div>
-
-                  {deadline.applicationUrl && (
-                    <a
-                      href={
-                        deadline.applicationUrl
-                      }
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className={
-                        styles.applyButton
-                      }
-                    >
-                      Apply Officially →
-                    </a>
+        />
+      ) : (
+        <div className={styles.stackLg}>
+          {/* Exam Overview Card */}
+          <section className={styles.card}>
+            <div className={styles.examCardTop}>
+              <div>
+                <div className={styles.examAuthority}>
+                  {first.exam.conductingBody}
+                </div>
+                <h1 style={{ fontSize: 26, fontWeight: 800, lineHeight: 1.2 }}>
+                  {first.exam.name}
+                </h1>
+                <div className={styles.examMetaRow}>
+                  <EligibilityBadge eligible={anyEligible} />
+                  {first.exam.examType && (
+                    <GenericBadge label={first.exam.examType} tone="neutral" />
                   )}
-                </article>
-              ),
-            )}
-          </div>
-        </section>
-      )}
+                  <GenericBadge
+                    label={`${results.filter((r) => r.eligible).length}/${results.length} qualifying post(s)`}
+                    tone={anyEligible ? "info" : "neutral"}
+                  />
+                </div>
+              </div>
 
-      {sources.length > 0 && (
-        <section
-          className={styles.section}
-        >
-          <div
-            className={
-              styles.sectionHeader
-            }
-          >
-            <div>
-              <p
-                className={
-                  styles.eyebrow
-                }
-              >
-                VERIFIED SOURCE
-              </p>
-
-              <h2>
-                Official Notifications
-              </h2>
-            </div>
-          </div>
-
-          <div
-            className={
-              styles.sourceList
-            }
-          >
-            {sources.map(
-              (source) => (
-                <article
-                  key={source.id}
-                  className={
-                    styles.sourceCard
-                  }
+              <div className={styles.examTopActions}>
+                <button
+                  type="button"
+                  className={`${styles.btn} ${styles.btnSecondary}`}
+                  onClick={handleToggleSave}
+                  disabled={savingBookmark}
                 >
-                  <div>
-                    <h3>
-                      {
-                        source
-                          .notificationTitle
-                      }
-                    </h3>
+                  <IconBookmark size={16} filled={isSaved} />
+                  {isSaved ? "Saved" : "Save Exam"}
+                </button>
 
-                    <p>
-                      {
-                        source.organization
-                      }
-                    </p>
-
-                    {source.notificationDate && (
-                      <p>
-                        Notification Date:{" "}
-                        <strong>
-                          {formatDate(
-                            source.notificationDate,
-                          )}
-                        </strong>
-                      </p>
-                    )}
-                  </div>
-
+                {first.exam.officialWebsite && (
                   <a
-                    href={
-                      source.officialUrl
-                    }
+                    href={first.exam.officialWebsite}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className={
-                      styles.sourceButton
-                    }
+                    className={`${styles.btn} ${styles.btnBlue}`}
                   >
-                    View Official Source →
+                    Official Website
+                    <IconExternalLink size={14} />
                   </a>
-                </article>
-              ),
+                )}
+              </div>
+            </div>
+
+            {first.exam.description && (
+              <p
+                style={{
+                  marginTop: 14,
+                  fontSize: 14.5,
+                  color: "var(--text-secondary)",
+                  lineHeight: 1.65,
+                }}
+              >
+                {first.exam.description}
+              </p>
             )}
+          </section>
+
+          {/* Exam-Level Rules Section */}
+          {examLevelRules.length > 0 && (
+            <section className={styles.card}>
+              <div className={styles.cardHeader}>
+                <div>
+                  <h2 className={styles.cardTitle}>
+                    Exam-Level Eligibility Criteria
+                  </h2>
+                  <p className={styles.cardSubtitle}>
+                    Common conditions evaluated across all posts in this examination
+                    (including age cutoff dates and category-wise limits).
+                  </p>
+                </div>
+              </div>
+
+              <div className={styles.stackMd}>
+                {examLevelRules.map((rule, idx) => (
+                  <div
+                    key={idx}
+                    className={`${styles.postBox} ${
+                      rule.satisfied
+                        ? styles.postBoxEligible
+                        : styles.postBoxIneligible
+                    }`}
+                  >
+                    <div className={styles.postHeader}>
+                      <div>
+                        <div className={styles.postTitle}>{rule.name}</div>
+                        <div className={styles.postMeta}>
+                          Field: <code>{rule.conditionField}</code> • Rule:{" "}
+                          <code>{rule.expectedValue}</code>
+                        </div>
+                      </div>
+                      <EligibilityBadge eligible={rule.satisfied} />
+                    </div>
+                    <div className={styles.reasonItem}>
+                      <span
+                        className={
+                          rule.satisfied ? styles.reasonPass : styles.reasonFail
+                        }
+                        style={{ marginTop: 2 }}
+                      >
+                        {rule.satisfied ? (
+                          <IconCheckCircle size={15} />
+                        ) : (
+                          <IconXCircle size={15} />
+                        )}
+                      </span>
+                      <span>{cleanReason(rule.reason)}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
+
+          {/* Post-by-Post Breakdown */}
+          <section className={styles.card}>
+            <div className={styles.cardHeader}>
+              <div>
+                <h2 className={styles.cardTitle}>
+                  Posts &amp; Post-Level Eligibility ({results.length})
+                </h2>
+                <p className={styles.cardSubtitle}>
+                  Every post group is evaluated independently against both exam-level
+                  and post-specific qualification criteria.
+                </p>
+              </div>
+            </div>
+
+            <div className={styles.stackMd}>
+              {results.map((item, idx) => {
+                const postRules = (item.ruleEvaluations ?? []).filter(
+                  (r) => r.scope === "POST",
+                );
+                const allEvalRules = item.ruleEvaluations ?? [];
+
+                return (
+                  <div
+                    key={item.post?.id ?? `post-${idx}`}
+                    className={`${styles.postBox} ${
+                      item.eligible
+                        ? styles.postBoxEligible
+                        : styles.postBoxIneligible
+                    }`}
+                  >
+                    <div className={styles.postHeader}>
+                      <div>
+                        <h3 className={styles.postTitle} style={{ fontSize: 16 }}>
+                          {item.post ? item.post.name : "General Examination"}
+                        </h3>
+                        {item.post && (
+                          <div className={styles.postMeta} style={{ marginTop: 3 }}>
+                            {[
+                              item.post.code ? `Code: ${item.post.code}` : null,
+                              item.post.department
+                                ? `Department: ${item.post.department}`
+                                : null,
+                              item.post.vacancies
+                                ? `Verified Vacancies: ${item.post.vacancies.toLocaleString("en-IN")}`
+                                : "Vacancies: Per official notice",
+                            ]
+                              .filter(Boolean)
+                              .join(" • ")}
+                          </div>
+                        )}
+                      </div>
+                      <EligibilityBadge eligible={item.eligible} />
+                    </div>
+
+                    {item.post?.qualification && (
+                      <div className={styles.postMeta}>
+                        <strong>Official Qualification Requirement:</strong>{" "}
+                        {item.post.qualification}
+                      </div>
+                    )}
+
+                    {item.post?.description && (
+                      <div className={styles.postMeta}>{item.post.description}</div>
+                    )}
+
+                    <div style={{ marginTop: 6 }}>
+                      <div
+                        style={{
+                          fontSize: 12,
+                          fontWeight: 700,
+                          textTransform: "uppercase",
+                          letterSpacing: "0.05em",
+                          color: "var(--text-muted)",
+                          marginBottom: 6,
+                        }}
+                      >
+                        {postRules.length > 0
+                          ? "Rule-by-Rule Evaluation"
+                          : "Eligibility Reasons"}
+                      </div>
+                      <ul className={styles.reasonList}>
+                        {(allEvalRules.length > 0
+                          ? allEvalRules
+                          : item.reasons.map((reason) => ({
+                              satisfied: item.eligible,
+                              reason,
+                              scope: "EXAM" as const,
+                            }))
+                        ).map((entry, rIdx) => (
+                          <li key={rIdx} className={styles.reasonItem}>
+                            <span
+                              className={
+                                entry.satisfied
+                                  ? styles.reasonPass
+                                  : styles.reasonFail
+                              }
+                              style={{ marginTop: 2, flexShrink: 0 }}
+                            >
+                              {entry.satisfied ? (
+                                <IconCheckCircle size={14} />
+                              ) : (
+                                <IconXCircle size={14} />
+                              )}
+                            </span>
+                            <span>
+                              <strong>[{entry.scope}]</strong>{" "}
+                              {cleanReason(entry.reason)}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+
+          {/* Application Deadlines & Official Notification Sources */}
+          <div className={styles.gridTwo}>
+            <section className={styles.card}>
+              <div className={styles.cardHeader}>
+                <h2 className={styles.cardTitle}>Application Schedule &amp; Deadlines</h2>
+              </div>
+
+              {allDeadlines.length === 0 ? (
+                <p className={styles.cardSubtitle}>
+                  No application schedule recorded yet.
+                </p>
+              ) : (
+                <div className={styles.stackMd}>
+                  {allDeadlines.map((d) => (
+                    <div key={d.id} className={styles.postBox}>
+                      <div className={styles.postHeader}>
+                        <DeadlineStatusBadge status={d.status} />
+                        {d.applicationUrl && d.status === "OPEN" && (
+                          <a
+                            href={d.applicationUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className={`${styles.btn} ${styles.btnBlue} ${styles.btnSm}`}
+                          >
+                            Apply Online
+                            <IconExternalLink size={13} />
+                          </a>
+                        )}
+                      </div>
+                      <div className={styles.deadlineMeta}>
+                        <span>
+                          Start: <strong>{formatDate(d.applicationStart)}</strong>
+                        </span>
+                        <span>
+                          Closing: <strong>{formatDate(d.applicationEnd)}</strong>
+                        </span>
+                        <span>
+                          Exam Date: <strong>{formatDate(d.examDate)}</strong>
+                        </span>
+                      </div>
+                      {d.status === "CLOSED" && (
+                        <p className={styles.fieldHint}>
+                          This application window is closed (historical cycle record).
+                        </p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </section>
+
+            <section className={styles.card}>
+              <div className={styles.cardHeader}>
+                <h2 className={styles.cardTitle}>
+                  Official Notification Sources ({allSources.length})
+                </h2>
+              </div>
+
+              {allSources.length === 0 ? (
+                <p className={styles.cardSubtitle}>
+                  No official notification PDFs attached yet.
+                </p>
+              ) : (
+                <div className={styles.stackMd}>
+                  {allSources.map((src) => (
+                    <div key={src.id} className={styles.postBox}>
+                      <div style={{ fontWeight: 700, fontSize: 14 }}>
+                        {src.notificationTitle}
+                      </div>
+                      <div className={styles.postMeta}>
+                        {src.organization}
+                        {src.notificationIdentifier
+                          ? ` • Ref: ${src.notificationIdentifier}`
+                          : ""}
+                      </div>
+                      <div className={styles.postMeta}>
+                        Published: {formatDate(src.notificationDate)} • Last verified:{" "}
+                        {src.lastVerifiedAt
+                          ? formatDate(src.lastVerifiedAt)
+                          : "Pending verification"}
+                      </div>
+                      <div style={{ marginTop: 4 }}>
+                        <a
+                          href={src.officialUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className={`${styles.btn} ${styles.btnSecondary} ${styles.btnSm}`}
+                        >
+                          <IconFileText size={14} />
+                          Open Official Document
+                          <IconExternalLink size={13} />
+                        </a>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </section>
           </div>
-        </section>
+        </div>
       )}
-
-      <section
-        className={
-          styles.bottomAction
-        }
-      >
-        <button
-          type="button"
-          className={styles.backButton}
-          onClick={() =>
-            router.push("/")
-          }
-        >
-          ← Back to Dashboard
-        </button>
-
-        {exam.officialWebsite && (
-          <a
-            href={
-              exam.officialWebsite
-            }
-            target="_blank"
-            rel="noopener noreferrer"
-            className={
-              styles.applyButton
-            }
-          >
-            Visit Official Website →
-          </a>
-        )}
-      </section>
-    </main>
+    </AppShell>
   );
 }

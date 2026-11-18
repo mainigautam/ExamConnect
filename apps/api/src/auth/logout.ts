@@ -5,6 +5,7 @@ import {
   deleteSession,
   sessionCookieName,
 } from "./session.js";
+import { getSessionCookieOptions } from "../security.js";
 
 export async function logoutRoute(app: FastifyInstance) {
   app.post("/auth/logout", async (request, reply) => {
@@ -14,11 +15,12 @@ export async function logoutRoute(app: FastifyInstance) {
       await deleteSession(token);
     }
 
+    const cookieOpts = getSessionCookieOptions();
     reply.clearCookie(sessionCookieName, {
-      httpOnly: true,
-      secure: false,
-      sameSite: "lax",
-      path: "/",
+      httpOnly: cookieOpts.httpOnly,
+      secure: cookieOpts.secure,
+      sameSite: cookieOpts.sameSite,
+      path: cookieOpts.path,
     });
 
     return reply.send({

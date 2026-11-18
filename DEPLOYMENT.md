@@ -1,0 +1,79 @@
+# Deployment & Production Readiness Guide
+
+This guide covers deploying **ExamConnect** (`apps/web`, `apps/api`, `apps/worker`) with PostgreSQL, Redis, HTTPS cookies, and live SMTP email delivery.
+
+## 1. Environment Variables Checklist
+
+Never commit `.env` files or real credentials to Git. Configure these variables in your hosting provider's secret store:
+
+### Backend (`apps/api` & `apps/worker`)
+
+| Variable | Required | Description |
+| --- | --- | --- |
+| `NODE_ENV` | Yes | Set to `production` |
+| `PORT` | Yes | API port (default `4000`) |
+| `HOST` | Yes | Bind address (`0.0.0.0` in containers/cloud) |
+| `DATABASE_URL` | Yes | PostgreSQL 17 connection URI (`sslmode=require` recommended in prod) |
+| `REDIS_HOST` / `REDIS_PORT` | Worker | Redis connection for BullMQ job scheduling |
+| `APP_URL` | Yes | Public frontend URL (e.g. `https://examconnect.example.com`) used to build password reset links |
+| `CORS_ORIGINS` | Yes | Comma-separated allowed frontend origins |
+| `COOKIE_SECURE` | Yes | Set `true` over HTTPS (enables `Secure` + `SameSite=None` for cross-origin APIs) |
+| `SMTP_HOST` | Yes (for reset mail) | SMTP server hostname (e.g. `smtp.resend.com`, `smtp.sendgrid.net`, `email-smtp.ap-south-1.amazonaws.com`) |
+| `SMTP_PORT` | Yes (for reset mail) | `587` (STARTTLS) or `465` (SMTPS/TLS) |
+| `SMTP_SECURE` | Optional | `true` for port `465`, `false` for STARTTLS on `587` |
+| `SMTP_USER` | Yes (for reset mail) | SMTP authentication username |
+| `SMTP_PASS` | Yes (for reset mail) | SMTP authentication password / API key |
+| `SMTP_FROM` | Yes (for reset mail) | Verified sender header (e.g. `ExamConnect Security <no-reply@yourdomain.com>`) |
+
+### Frontend (`apps/web`)
+
+| Variable | Required | Description |
+| --- | --- | --- |
+| `NEXT_PUBLIC_API_URL` | Yes | Public HTTPS URL of the Fastify API (never store DB or SMTP secrets in `NEXT_PUBLIC_*`) |
+
+## 2. Email Delivery Behavior (Forgot Password)
+
+- **Production (`NODE_ENV=production`)**:
+  - Uses the built-in TLS/STARTTLS SMTP client (`apps/api/src/email/smtp-client.ts`).
+  - If SMTP credentials are missing, `POST /auth/forgot-password` returns HTTP `503` and logs an operational error. It **never** claims an email was sent when delivery fails.
+  - Reset tokens are **never** logged in production.
+- **Local Development (`NODE_ENV !== production`)**:
+  - If `SMTP_HOST` and `SMTP_FROM` are configured, real SMTP mail is sent.
+  - If SMTP is left blank, rendered emails (HTML + JSON including the reset URL) are written safely to `apps/api/.dev-mailbox/latest-password-reset.json` (git-ignored) so developers can test the complete `/reset-password?token=...` flow locally.
+
+## 3. Production Build Steps
+
+```powershell
+# 1. Install dependencies
+pnpm install --frozen-lockfile
+
+# 2. Apply database migrations (additive, non-destructive)
+pnpm --filter @examconnect/database exec prisma db migrate
+
+# 3. Typecheck and run automated tests
+pnpm typecheck
+pnpm --filter @examconnect/api test
+
+# 4. Build API and Frontend
+pnpm --filter @examconnect/api build
+pnpm --filter web build
+```
+
+## 4. Running in Production
+
+```powershell
+# Start API
+pnpm --filter @examconnect/api start
+
+# Start Frontend
+pnpm --filter web start
+
+# Start Background Worker (requires Redis)
+pnpm --filter @examconnect/worker dev
+```
+
+## 5. Health Check Endpoints
+
+- `GET /health` — API liveness probe
+- `GET /health/db` — PostgreSQL readiness probe
+- `GET /admin/system-health` — Authenticated admin diagnostics (DB, SMTP status, active sessions, unverified source count)

@@ -6,8 +6,11 @@
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "build": "tsc",
-    "start": "node dist/index.js",
-    "typecheck": "tsc --noEmit"
+    "start": "tsx src/index.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --test \"src/**/*.test.ts\"",
+    "bootstrap:admin": "tsx src/scripts/bootstrap-admin.ts",
+    "seed:exams": "tsx ../../packages/database/src/seed-exams.ts"
   },
   "dependencies": {
     "@examconnect/database": "workspace:*",

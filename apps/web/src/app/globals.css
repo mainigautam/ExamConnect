@@ -1,17 +1,56 @@
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
+  --bg-canvas: #f4f6fa;
+  --bg-surface: #ffffff;
+  --bg-subtle: #f8fafc;
+  --bg-muted: #eef2f7;
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  --navy-950: #09152b;
+  --navy-900: #0f1f3d;
+  --navy-800: #1a3159;
+  --navy-700: #264273;
+
+  --blue-700: #1e40af;
+  --blue-600: #1d4ed8;
+  --blue-500: #2563eb;
+  --blue-100: #dbeafe;
+  --blue-50: #eff6ff;
+
+  --emerald-700: #047857;
+  --emerald-600: #059669;
+  --emerald-100: #d1fae5;
+  --emerald-50: #ecfdf5;
+
+  --rose-700: #b91c1c;
+  --rose-600: #dc2626;
+  --rose-100: #fee2e2;
+  --rose-50: #fef2f2;
+
+  --amber-700: #b45309;
+  --amber-600: #d97706;
+  --amber-100: #fef3c7;
+  --amber-50: #fffbeb;
+
+  --text-primary: #0f1f3d;
+  --text-secondary: #43536d;
+  --text-muted: #687892;
+
+  --border-subtle: #e2e8f0;
+  --border-strong: #cbd5e1;
+
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 20px;
+
+  --shadow-xs: 0 1px 2px rgba(15, 31, 61, 0.05);
+  --shadow-sm: 0 2px 8px rgba(15, 31, 61, 0.06);
+  --shadow-md: 0 10px 28px rgba(15, 31, 61, 0.08);
+  --shadow-lg: 0 20px 50px rgba(15, 31, 61, 0.12);
 }
 
 html {
   height: 100%;
+  color-scheme: light;
 }
 
 html,
@@ -24,9 +63,10 @@ body {
   min-height: 100%;
   display: flex;
   flex-direction: column;
-  color: var(--foreground);
-  background: var(--background);
-  font-family: Arial, Helvetica, sans-serif;
+  color: var(--text-primary);
+  background: var(--bg-canvas);
+  font-family: var(--font-geist-sans), -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  line-height: 1.5;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
@@ -42,8 +82,18 @@ a {
   text-decoration: none;
 }
 
-@media (prefers-color-scheme: dark) {
-  html {
-    color-scheme: dark;
-  }
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: 2px solid var(--blue-600);
+  outline-offset: 2px;
 }

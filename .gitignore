@@ -19,6 +19,7 @@ coverage/
 uploads/
 storage/
 logs/
+.dev-mailbox/
 
 # OS files
 .DS_Store
